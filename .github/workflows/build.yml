@@ -33,13 +33,12 @@ jobs:
           # Enable AndroidX
           android.useAndroidX=true
           
-          # Disable legacy Android support libraries
-          android.enableDexingArtifactTransform=true
-          
           # Optimize build performance
           org.gradle.parallel=true
           org.gradle.caching=true
-          org.gradle.workers.max=4
+          org.gradle.workers.max=2
+          org.gradle.jvmargs=-Xmx4096m -XX:MaxMetaspaceSize=1024m -Dfile.encoding=UTF-8
+          kotlin.daemon.jvmargs=-Xmx2048m
           
           # Kotlin compiler settings
           kotlin.incremental=true

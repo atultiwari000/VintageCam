@@ -2,7 +2,6 @@ package com.vintagecam.app.ui.viewfinder
 
 import android.Manifest
 import android.content.Context
-import android.opengl.GLSurfaceView
 import androidx.camera.core.Preview
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -37,16 +36,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.BatteryFull
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
 import androidx.compose.material.icons.filled.PhotoLibrary
-import androidx.compose.material.icons.filled.SdStorage
 import androidx.compose.material.icons.filled.SwitchCamera
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -159,10 +155,6 @@ private fun ViewfinderContent(
         pageCount = { uiState.profiles.size.coerceAtLeast(1) },
     )
     val currentProfile = uiState.profiles.getOrNull(uiState.currentProfileIndex)
-    val previewShape = currentProfile?.previewShape()
-    val previewModifier = Modifier.fillMaxSize().then(
-        if (previewShape != null) Modifier.clip(previewShape) else Modifier,
-    )
 
     LaunchedEffect(pagerState.currentPage) {
         if (uiState.profiles.isNotEmpty()) {
@@ -176,24 +168,27 @@ private fun ViewfinderContent(
         }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Full-screen preview with zero padding
         HorizontalPager(
             state = pagerState,
-            modifier = previewModifier,
+            modifier = Modifier.fillMaxSize(),
             userScrollEnabled = uiState.profiles.isNotEmpty(),
         ) { _ ->
             CameraPreview(
                 context = context,
-                modifier = previewModifier,
+                modifier = Modifier.fillMaxSize(),
                 profile = currentProfile,
                 onStartPreview = onStartPreview,
             )
         }
 
+        // Chrome overlay (draws on top of full-screen preview)
         currentProfile?.let {
-            ProfileChromeOverlay(profile = it, modifier = previewModifier)
+            ProfileChromeOverlay(profile = it, modifier = Modifier.fillMaxSize())
         }
 
+        // Top controls
         TopControlsRow(
             flashEnabled = uiState.flashEnabled,
             onToggleFlash = onToggleFlash,
@@ -206,6 +201,7 @@ private fun ViewfinderContent(
                 .padding(horizontal = 16.dp, vertical = 24.dp),
         )
 
+        // Capture button area at bottom
         CaptureArea(
             profile = currentProfile,
             cameraState = uiState.cameraState,
@@ -383,32 +379,11 @@ private fun ProfileChromeOverlay(
 
 @Composable
 private fun VhsOverlay(modifier: Modifier = Modifier) {
-    val blinkAlpha by rememberInfiniteTransition(label = "rec-blink").animateFloat(
-        initialValue = 1f,
-        targetValue = 0.15f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2000),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "rec-alpha",
-    )
-    val batteryLevel by rememberInfiniteTransition(label = "vhs-battery").animateFloat(
-        initialValue = 1f,
-        targetValue = 0.35f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 5000),
-            repeatMode = RepeatMode.Reverse,
-        ),
-        label = "battery-level",
-    )
-
     Box(
-        modifier = modifier
-            .fillMaxSize()
-            .padding(10.dp)
-            .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp, bottomStart = 8.dp, bottomEnd = 8.dp)),
+        modifier = modifier.fillMaxSize(),
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
+            // Scanlines across full screen
             val scanlineSpacing = 4.dp.toPx()
             var y = 0f
             while (y < size.height) {
@@ -421,6 +396,7 @@ private fun VhsOverlay(modifier: Modifier = Modifier) {
                 y += scanlineSpacing
             }
 
+            // Vignette gradient
             drawRect(
                 brush = Brush.radialGradient(
                     colors = listOf(
@@ -434,6 +410,7 @@ private fun VhsOverlay(modifier: Modifier = Modifier) {
             )
         }
 
+        // Static red dot + "STBY" in top left
         Row(
             modifier = Modifier
                 .align(Alignment.TopStart)
@@ -442,52 +419,16 @@ private fun VhsOverlay(modifier: Modifier = Modifier) {
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
             Canvas(modifier = Modifier.size(8.dp)) {
-                drawCircle(Color.Red.copy(alpha = blinkAlpha))
+                drawCircle(Color.Red)
             }
             Text(
-                text = "REC",
-                color = Color.Red.copy(alpha = blinkAlpha),
+                text = "STBY",
+                color = Color.Red,
                 fontWeight = FontWeight.Bold,
                 fontSize = 12.sp,
                 fontFamily = VintageCamTypography.vhsFont,
             )
         }
-
-        BatteryMeter(
-            level = batteryLevel,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(12.dp),
-        )
-    }
-}
-
-@Composable
-private fun BatteryMeter(
-    level: Float,
-    modifier: Modifier = Modifier,
-) {
-    Canvas(modifier = modifier.size(28.dp, 14.dp)) {
-        val bodyWidth = size.width - 4f
-        val bodyHeight = size.height
-        drawRoundRect(
-            color = Color.White.copy(alpha = 0.8f),
-            topLeft = Offset(0f, 0f),
-            size = Size(bodyWidth, bodyHeight),
-            style = Stroke(width = 1.4f),
-        )
-        drawRect(
-            color = Color.White.copy(alpha = 0.8f),
-            topLeft = Offset(bodyWidth, bodyHeight * 0.3f),
-            size = Size(4f, bodyHeight * 0.4f),
-        )
-
-        val fillWidth = (bodyWidth - 4f) * level.coerceIn(0f, 1f)
-        drawRect(
-            color = if (level > 0.4f) Color.White.copy(alpha = 0.9f) else Color(0xFFFFD700),
-            topLeft = Offset(2f, 2f),
-            size = Size(fillWidth, bodyHeight - 4f),
-        )
     }
 }
 
@@ -544,56 +485,19 @@ private fun DisposableOverlay(modifier: Modifier = Modifier) {
 @Composable
 private fun DigicamOverlay(modifier: Modifier = Modifier) {
     Box(modifier = modifier.fillMaxSize()) {
-        Surface(
+        // Small green "READY" indicator in top corner
+        Text(
+            text = "READY",
+            color = Color.Green,
+            fontSize = 10.sp,
+            fontFamily = VintageCamTypography.digitalFont,
+            fontWeight = FontWeight.Bold,
             modifier = Modifier
-                .align(Alignment.TopCenter)
-                .fillMaxWidth()
-                .height(48.dp)
-                .padding(top = 0.dp),
-            shape = RoundedCornerShape(10.dp),
-            color = Color.Black.copy(alpha = 0.65f),
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 12.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Filled.BatteryFull,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(14.dp),
-                    )
-                    Text("3B", color = Color.White, fontSize = 10.sp, fontFamily = VintageCamTypography.digitalFont)
-                    Icon(
-                        imageVector = Icons.Filled.SdStorage,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(14.dp),
-                    )
-                    Text("SD", color = Color.White, fontSize = 10.sp, fontFamily = VintageCamTypography.digitalFont)
-                    Icon(
-                        imageVector = Icons.Filled.FlashOn,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(14.dp),
-                    )
-                    Text("AUTO", color = Color.White, fontSize = 10.sp, fontFamily = VintageCamTypography.digitalFont)
-                }
+                .align(Alignment.TopStart)
+                .padding(12.dp),
+        )
 
-                Text(
-                    "2.0MP",
-                    color = Color.White,
-                    fontSize = 10.sp,
-                    fontFamily = VintageCamTypography.digitalFont,
-                    fontWeight = FontWeight.Medium,
-                )
-            }
-        }
-
+        // Subtle gradient at bottom
         Canvas(
             modifier = Modifier
                 .fillMaxWidth()
@@ -614,18 +518,6 @@ private fun cameraStateLabel(cameraState: CameraState): String {
         CameraState.Previewing -> "READY"
         CameraState.Capturing -> "REC"
         CameraState.Processing -> "BUSY"
-    }
-}
-
-private fun CameraProfile.previewShape(): RoundedCornerShape? {
-    return when (viewfinderType) {
-        ViewfinderType.CRT -> RoundedCornerShape(
-            topStart = 32.dp,
-            topEnd = 32.dp,
-            bottomStart = 8.dp,
-            bottomEnd = 8.dp,
-        )
-        else -> null
     }
 }
 

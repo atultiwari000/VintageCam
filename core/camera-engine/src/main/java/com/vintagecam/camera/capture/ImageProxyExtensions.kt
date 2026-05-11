@@ -10,8 +10,17 @@ import java.io.ByteArrayOutputStream
 internal fun ImageProxy.toBitmap(): Bitmap {
     return when (format) {
         ImageFormat.YUV_420_888 -> yuv420888ToBitmap()
+        ImageFormat.JPEG, 256 -> jpegToBitmap()
         else -> throw IllegalArgumentException("Unsupported image format: $format")
     }
+}
+
+private fun ImageProxy.jpegToBitmap(): Bitmap {
+    val buffer = planes[0].buffer
+    val bytes = ByteArray(buffer.capacity())
+    buffer.get(bytes)
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, null)
+        ?: throw IllegalStateException("Failed to decode JPEG bitmap")
 }
 
 private fun ImageProxy.yuv420888ToBitmap(): Bitmap {

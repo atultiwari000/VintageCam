@@ -17,6 +17,36 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-26 platforms;android-34 build-tools;34.0.0'
 
+      - name: Set ANDROID_SDK_ROOT
+        run: echo "ANDROID_SDK_ROOT=$ANDROID_SDK_ROOT" >> $GITHUB_ENV
+
+      - name: Create local.properties for CI
+        run: |
+          mkdir -p ~/.android
+          echo "sdk.dir=${ANDROID_SDK_ROOT}" > local.properties
+          echo "Created local.properties:"
+          cat local.properties
+
+      - name: Create gradle.properties
+        run: |
+          cat > gradle.properties << 'EOF'
+          # Enable AndroidX
+          android.useAndroidX=true
+          
+          # Disable legacy Android support libraries
+          android.enableDexingArtifactTransform=true
+          
+          # Optimize build performance
+          org.gradle.parallel=true
+          org.gradle.caching=true
+          org.gradle.workers.max=4
+          
+          # Kotlin compiler settings
+          kotlin.incremental=true
+          EOF
+          echo "Created gradle.properties:"
+          cat gradle.properties
+
       - name: Accept licenses
         run: yes | sdkmanager --licenses
 

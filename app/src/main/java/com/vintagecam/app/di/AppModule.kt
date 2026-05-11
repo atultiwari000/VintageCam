@@ -1,5 +1,6 @@
 package com.vintagecam.app.di
 
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import com.vintagecam.camera.CameraEngine
 import com.vintagecam.camera.CameraXEngineImpl
 import dagger.Binds
@@ -11,5 +12,6 @@ import dagger.hilt.components.SingletonComponent
 @InstallIn(SingletonComponent::class)
 abstract class AppModule {
     @Binds
+    @ExperimentalCamera2Interop
     abstract fun bindCameraEngine(impl: CameraXEngineImpl): CameraEngine
 }

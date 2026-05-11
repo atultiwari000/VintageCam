@@ -1,0 +1,105 @@
+# VintageCam root .gitignore
+# Android / Kotlin / Gradle specific ignores for a multi-module project
+
+### Gradle
+.gradle/
+/**/build/
+!gradle/wrapper/gradle-wrapper.jar
+/.idea/modules.xml
+
+### Gradle wrapper and local files
+gradle-wrapper.jar
+gradle-app.setting
+gradle.properties.local
+
+### Local configuration
+/local.properties
+keystore.properties
+signing.properties
+*.env
+.env.*
+*.properties
+
+### Android Studio / IntelliJ
+.idea/
+*.iml
+*.iws
+.idea_modules/
+captures/
+.externalNativeBuild/
+.cxx/
+.navigation/
+out/
+
+### Build outputs
+*.apk
+*.ap_
+*.apks
+*.aab
+*.ap_
+
+### Generated files
+generated/
+**/generated/
+**/generatedSource/
+
+### Kotlin/Java
+*.class
+*.log
+
+### Native / NDK
+obj/
+*.so
+native-lib.*
+*.hprof
+
+### Firebase / Google
+google-services.json
+*.google-services.json
+
+### Crashlytics / Fabric
+fabric.properties
+crashlytics.properties
+
+### Keystores and secrets
+*.keystore
+*.jks
+/local-debug.keystore
+/debug.keystore
+secrets.properties
+local-secrets.properties
+
+### JetBrains caches and workspace
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+.idea/**/usage.statistics.xml
+.idea/**/dictionaries
+.idea/**/shelf
+
+### OS files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Icon?
+desktop.ini
+
+### Misc
+*.swp
+*~
+*.sublime-project
+*.sublime-workspace
+
+### Logs and reports
+*.log
+reports/
+coverage/
+
+### Temporary files
+tmp/
+temp/
+
+### Keep gradle wrapper jar tracked
+!/gradle/wrapper/gradle-wrapper.jar
+
+
+*.md

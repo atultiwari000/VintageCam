@@ -1,8 +1,8 @@
 package com.vintagecam.camera
 
-import android.graphics.Bitmap
 import androidx.camera.core.Preview
 import androidx.lifecycle.LifecycleOwner
+import com.vintagecam.camera.capture.CaptureEvent
 import com.vintagecam.profiles.CameraProfile
 import kotlinx.coroutines.flow.Flow
 
@@ -11,7 +11,7 @@ interface CameraEngine {
 
     fun stopPreview()
 
-    fun capturePhoto(): Flow<Bitmap>
+    fun capturePhoto(profile: CameraProfile): Flow<CaptureEvent>
 
     fun setZoom(scale: Float)
 

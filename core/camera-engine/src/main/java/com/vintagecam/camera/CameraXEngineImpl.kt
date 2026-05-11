@@ -2,11 +2,9 @@ package com.vintagecam.camera
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.ImageFormat
-import android.graphics.YuvImage
 import android.hardware.camera2.CaptureRequest
+import android.annotation.SuppressLint
 import androidx.camera.camera2.interop.Camera2Interop
-import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -18,19 +16,25 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.vintagecam.camera.pipeline.CpuFilterApplier
+import com.vintagecam.camera.capture.CaptureEvent
+import com.vintagecam.camera.capture.CapturePostProcessor
+import com.vintagecam.camera.capture.GallerySaver
+import com.vintagecam.camera.capture.toBitmap
 import com.vintagecam.profiles.CameraProfile
-import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.callbackFlow
-import java.io.ByteArrayOutputStream
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.suspendCancellableCoroutine
 import javax.inject.Inject
 import javax.inject.Singleton
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 
 @Singleton
-@ExperimentalCamera2Interop
 class CameraXEngineImpl @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val cpuFilterApplier: CpuFilterApplier,
+    private val capturePostProcessor: CapturePostProcessor,
 ) : CameraEngine {
 
     private var cameraProvider: ProcessCameraProvider? = null
@@ -55,38 +59,37 @@ class CameraXEngineImpl @Inject constructor(
         imageCaptureUseCase = null
     }
 
-    override fun capturePhoto(): Flow<Bitmap> = callbackFlow {
+    override fun capturePhoto(profile: CameraProfile): Flow<CaptureEvent> = flow {
         val imageCapture = imageCaptureUseCase
-        if (imageCapture == null) {
-            close(IllegalStateException("ImageCapture is not initialized. Call startPreview() first."))
-            return@callbackFlow
+            ?: throw IllegalStateException("ImageCapture is not initialized. Call startPreview() first.")
+
+        delay(profile.captureLatencyMs)
+        emit(CaptureEvent.Processing)
+
+        val image = suspendCancellableCoroutine<ImageProxy> { continuation ->
+            imageCapture.takePicture(
+                ContextCompat.getMainExecutor(appContext),
+                object : ImageCapture.OnImageCapturedCallback() {
+                    override fun onCaptureSuccess(image: ImageProxy) {
+                        continuation.resume(image)
+                    }
+
+                    override fun onError(exception: ImageCaptureException) {
+                        continuation.resumeWithException(exception)
+                    }
+                },
+            )
         }
 
-        imageCapture.takePicture(
-            ContextCompat.getMainExecutor(appContext),
-            object : ImageCapture.OnImageCapturedCallback() {
-                override fun onCaptureSuccess(image: ImageProxy) {
-                    try {
-                        val bitmap = imageProxyToBitmap(image)
-                        val profiledBitmap = activeProfile?.let { profile ->
-                            cpuFilterApplier.applyProfile(bitmap, profile)
-                        } ?: bitmap
-                        trySend(profiledBitmap)
-                        close()
-                    } catch (t: Throwable) {
-                        close(t)
-                    } finally {
-                        image.close()
-                    }
-                }
-
-                override fun onError(exception: ImageCaptureException) {
-                    close(exception)
-                }
-            },
-        )
-
-        awaitClose { }
+        try {
+            val bitmap = image.toBitmap()
+            val shaderAdjusted = cpuFilterApplier.applyProfile(bitmap, profile)
+            val processed = capturePostProcessor.apply(shaderAdjusted, profile, System.currentTimeMillis())
+            val uri = GallerySaver(appContext).save(processed, profile, System.currentTimeMillis())
+            emit(CaptureEvent.Success(processed, uri, System.currentTimeMillis()))
+        } finally {
+            image.close()
+        }
     }
 
     override fun setZoom(scale: Float) {
@@ -107,7 +110,7 @@ class CameraXEngineImpl @Inject constructor(
         activeProfile = profile
     }
 
-    @ExperimentalCamera2Interop
+    @SuppressLint("UnsafeOptInUsageError")
     private fun bindUseCases() {
         val owner = lifecycleOwner ?: return
         val surface = surfaceProvider ?: return
@@ -150,56 +153,4 @@ class CameraXEngineImpl @Inject constructor(
         )
     }
 
-    // v0.1 CPU fallback: convert YUV_420_888 frames to RGB bitmap for software processing.
-    private fun imageProxyToBitmap(image: ImageProxy): Bitmap {
-        return when (image.format) {
-            ImageFormat.YUV_420_888 -> yuv420888ToBitmap(image)
-            else -> throw IllegalArgumentException("Unsupported image format: ${image.format}")
-        }
-    }
-
-    private fun yuv420888ToBitmap(image: ImageProxy): Bitmap {
-        val nv21 = yuv420888ToNv21(image)
-        val yuvImage = YuvImage(nv21, ImageFormat.NV21, image.width, image.height, null)
-        val out = ByteArrayOutputStream()
-        yuvImage.compressToJpeg(android.graphics.Rect(0, 0, image.width, image.height), 95, out)
-        val jpegBytes = out.toByteArray()
-        return android.graphics.BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
-            ?: throw IllegalStateException("Failed to decode bitmap from camera frame")
-    }
-
-    private fun yuv420888ToNv21(image: ImageProxy): ByteArray {
-        val yBuffer = image.planes[0].buffer
-        val uBuffer = image.planes[1].buffer
-        val vBuffer = image.planes[2].buffer
-
-        val ySize = yBuffer.remaining()
-        val uSize = uBuffer.remaining()
-        val vSize = vBuffer.remaining()
-
-        val nv21 = ByteArray(ySize + uSize + vSize)
-
-        yBuffer.get(nv21, 0, ySize)
-
-        val chromaRowStride = image.planes[1].rowStride
-        val chromaPixelStride = image.planes[1].pixelStride
-        val width = image.width
-        val height = image.height
-        var outputPos = ySize
-
-        val vBytes = ByteArray(vSize)
-        val uBytes = ByteArray(uSize)
-        vBuffer.get(vBytes)
-        uBuffer.get(uBytes)
-
-        for (row in 0 until height / 2) {
-            for (col in 0 until width / 2) {
-                val chromaIndex = row * chromaRowStride + col * chromaPixelStride
-                nv21[outputPos++] = vBytes[chromaIndex]
-                nv21[outputPos++] = uBytes[chromaIndex]
-            }
-        }
-
-        return nv21
-    }
 }

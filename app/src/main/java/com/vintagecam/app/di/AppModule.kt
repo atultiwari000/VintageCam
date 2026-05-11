@@ -1,5 +1,7 @@
 package com.vintagecam.app.di
 
+import com.vintagecam.app.audio.CameraSoundEngine
+import com.vintagecam.app.audio.SoundPoolEngine
 import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import com.vintagecam.camera.CameraEngine
 import com.vintagecam.camera.CameraXEngineImpl
@@ -14,4 +16,7 @@ abstract class AppModule {
     @Binds
     @ExperimentalCamera2Interop
     abstract fun bindCameraEngine(impl: CameraXEngineImpl): CameraEngine
+
+    @Binds
+    abstract fun bindCameraSoundEngine(impl: SoundPoolEngine): CameraSoundEngine
 }

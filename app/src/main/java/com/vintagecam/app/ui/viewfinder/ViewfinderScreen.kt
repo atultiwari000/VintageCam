@@ -2,26 +2,48 @@ package com.vintagecam.app.ui.viewfinder
 
 import android.Manifest
 import android.content.Context
-import android.graphics.Bitmap
-import androidx.camera.view.PreviewView
+import android.opengl.GLSurfaceView
+import androidx.camera.core.Preview
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BatteryFull
+import androidx.compose.material.icons.filled.FlashOff
+import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.SdStorage
+import androidx.compose.material.icons.filled.SwitchCamera
+import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -37,14 +59,22 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -52,12 +82,19 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import com.google.accompanist.permissions.ExperimentalPermissionsApi
 import com.google.accompanist.permissions.PermissionStatus
 import com.google.accompanist.permissions.rememberPermissionState
+import com.vintagecam.app.ui.theme.VintageCamTypography
+import com.vintagecam.profiles.CameraProfile
+import com.vintagecam.profiles.Era
 import com.vintagecam.profiles.ViewfinderType
+import com.vintagecam.camera.pipeline.PreviewFilterRenderer
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalPermissionsApi::class)
 @Composable
-fun ViewfinderScreen(viewModel: ViewfinderViewModel = hiltViewModel()) {
+fun ViewfinderScreen(
+    viewModel: ViewfinderViewModel = hiltViewModel(),
+    onOpenFilmRoll: () -> Unit,
+) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val uiState by viewModel.uiState.collectAsState()
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
@@ -77,8 +114,10 @@ fun ViewfinderScreen(viewModel: ViewfinderViewModel = hiltViewModel()) {
                 onCapture = viewModel::onCapture,
                 onToggleFlash = viewModel::onToggleFlash,
                 onProfilePageChanged = viewModel::onProfileSelected,
-                onStartPreview = { previewView ->
-                    viewModel.onStartPreview(lifecycleOwner, previewView)
+                onGalleryClick = onOpenFilmRoll,
+                onOpenFilmRoll = onOpenFilmRoll,
+                onStartPreview = { surfaceProvider ->
+                    viewModel.onStartPreview(lifecycleOwner, surfaceProvider)
                 },
             )
         }
@@ -109,13 +148,20 @@ private fun ViewfinderContent(
     onCapture: () -> Unit,
     onToggleFlash: () -> Unit,
     onProfilePageChanged: (Int) -> Unit,
-    onStartPreview: (PreviewView) -> Unit,
+    onGalleryClick: () -> Unit,
+    onOpenFilmRoll: () -> Unit,
+    onStartPreview: (Preview.SurfaceProvider) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val pagerState = rememberPagerState(
-        initialPage = uiState.selectedProfileIndex,
+        initialPage = uiState.currentProfileIndex,
         pageCount = { uiState.profiles.size.coerceAtLeast(1) },
+    )
+    val currentProfile = uiState.profiles.getOrNull(uiState.currentProfileIndex)
+    val previewShape = currentProfile?.previewShape()
+    val previewModifier = Modifier.fillMaxSize().then(
+        if (previewShape != null) Modifier.clip(previewShape) else Modifier,
     )
 
     LaunchedEffect(pagerState.currentPage) {
@@ -124,49 +170,54 @@ private fun ViewfinderContent(
         }
     }
 
-    LaunchedEffect(uiState.selectedProfileIndex) {
-        if (pagerState.currentPage != uiState.selectedProfileIndex) {
-            pagerState.animateScrollToPage(uiState.selectedProfileIndex)
+    LaunchedEffect(uiState.currentProfileIndex) {
+        if (pagerState.currentPage != uiState.currentProfileIndex) {
+            pagerState.animateScrollToPage(uiState.currentProfileIndex)
         }
     }
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         HorizontalPager(
             state = pagerState,
-            modifier = Modifier.fillMaxSize(),
+            modifier = previewModifier,
             userScrollEnabled = uiState.profiles.isNotEmpty(),
         ) { _ ->
             CameraPreview(
                 context = context,
+                modifier = previewModifier,
+                profile = currentProfile,
                 onStartPreview = onStartPreview,
             )
         }
 
-        val currentProfile = uiState.profiles.getOrNull(uiState.selectedProfileIndex)
         currentProfile?.let {
-            ProfileChromeOverlay(viewfinderType = it.viewfinderType)
+            ProfileChromeOverlay(profile = it, modifier = previewModifier)
         }
 
-        TopBar(
+        TopControlsRow(
             flashEnabled = uiState.flashEnabled,
             onToggleFlash = onToggleFlash,
             onSwitchCamera = onSwitchCamera,
+            onGalleryClick = onGalleryClick,
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.TopCenter)
-                .padding(top = 24.dp, start = 16.dp, end = 16.dp),
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .padding(horizontal = 16.dp, vertical = 24.dp),
         )
 
-        BottomCaptureControls(
-            profileName = currentProfile?.displayName.orEmpty(),
+        CaptureArea(
+            profile = currentProfile,
             cameraState = uiState.cameraState,
             onCapture = {
                 scope.launch { onCapture() }
             },
+            onOpenFilmRoll = onOpenFilmRoll,
             modifier = Modifier
                 .fillMaxWidth()
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 26.dp),
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(bottom = 20.dp),
         )
     }
 }
@@ -174,29 +225,55 @@ private fun ViewfinderContent(
 @Composable
 private fun CameraPreview(
     context: Context,
-    onStartPreview: (PreviewView) -> Unit,
+    modifier: Modifier,
+    profile: CameraProfile?,
+    onStartPreview: (Preview.SurfaceProvider) -> Unit,
 ) {
-    var previewView by remember { mutableStateOf<PreviewView?>(null) }
+    var previewStarted by remember { mutableStateOf(false) }
+    var glView by remember { mutableStateOf<GLSurfaceView?>(null) }
+    val renderer = remember {
+        PreviewFilterRenderer { _ ->
+            glView?.requestRender()
+        }
+    }
 
     AndroidView(
         factory = {
-            PreviewView(context).also { view ->
-                previewView = view
+            GLSurfaceView(context).apply {
+                setEGLContextClientVersion(2)
+                preserveEGLContextOnPause = true
+                renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
+                setRenderer(renderer)
+                renderer.attachRenderRequest { requestRender() }
+                glView = this
             }
         },
-        modifier = Modifier.fillMaxSize(),
+        modifier = modifier,
     )
 
-    LaunchedEffect(previewView) {
-        previewView?.let(onStartPreview)
+    LaunchedEffect(profile) {
+        profile?.let { currentProfile ->
+            glView?.queueEvent {
+                renderer.setProfile(currentProfile)
+            }
+            glView?.requestRender()
+        }
+    }
+
+    LaunchedEffect(glView) {
+        if (!previewStarted && glView != null) {
+            previewStarted = true
+            onStartPreview(renderer.previewSurfaceProvider)
+        }
     }
 }
 
 @Composable
-private fun TopBar(
+private fun TopControlsRow(
     flashEnabled: Boolean,
     onToggleFlash: () -> Unit,
     onSwitchCamera: () -> Unit,
+    onGalleryClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
@@ -205,101 +282,171 @@ private fun TopBar(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         IconButton(onClick = onToggleFlash) {
-            Text(
-                text = if (flashEnabled) "FLASH ON" else "FLASH OFF",
-                color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
+            Icon(
+                imageVector = if (flashEnabled) Icons.Filled.FlashOn else Icons.Filled.FlashOff,
+                contentDescription = if (flashEnabled) "Turn flash off" else "Turn flash on",
+                tint = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.size(24.dp),
             )
         }
 
-        IconButton(onClick = onSwitchCamera) {
-            Text(
-                text = "SWITCH",
-                color = Color.White,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold,
-            )
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            IconButton(onClick = onSwitchCamera) {
+                Icon(
+                    imageVector = Icons.Filled.SwitchCamera,
+                    contentDescription = "Switch camera",
+                    tint = Color.White.copy(alpha = 0.8f),
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+
+            IconButton(onClick = onGalleryClick) {
+                Icon(
+                    imageVector = Icons.Filled.PhotoLibrary,
+                    contentDescription = "Open gallery",
+                    tint = Color.White.copy(alpha = 0.8f),
+                    modifier = Modifier.size(24.dp),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun BottomCaptureControls(
-    profileName: String,
+private fun CaptureArea(
+    profile: CameraProfile?,
     cameraState: CameraState,
     onCapture: () -> Unit,
+    onOpenFilmRoll: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val hapticFeedback = LocalHapticFeedback.current
+    val interactionSource = remember { MutableInteractionSource() }
+    val isPressed by interactionSource.collectIsPressedAsState()
+    val buttonScale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPressed) 0.9f else 1f,
+        label = "capture-scale",
+    )
+
     Column(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
+        val profileFont = profile?.fontFamily() ?: VintageCamTypography.digitalFont
         Text(
-            text = profileName.uppercase(),
+            text = profile?.displayName.orEmpty().uppercase(),
             color = Color.White,
-            fontSize = 13.sp,
+            fontSize = 14.sp,
             fontWeight = FontWeight.Medium,
+            fontFamily = profileFont,
         )
 
         Box(
             modifier = Modifier
-                .size(92.dp)
+                .size(72.dp)
+                .scale(buttonScale)
                 .clip(CircleShape)
-                .background(Color.White)
-                .clickable(enabled = cameraState == CameraState.Previewing) { onCapture() },
+                .background(Color.Black)
+                .border(4.dp, Color.White, CircleShape)
+                .pointerInput(onOpenFilmRoll) {
+                    detectVerticalDragGestures { _, dragAmount ->
+                        if (dragAmount < -20f) {
+                            onOpenFilmRoll()
+                        }
+                    }
+                }
+                .clickable(
+                    enabled = cameraState == CameraState.Previewing,
+                    interactionSource = interactionSource,
+                    indication = null,
+                ) {
+                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
+                    onCapture()
+                },
             contentAlignment = Alignment.Center,
         ) {
             Box(
                 modifier = Modifier
-                    .size(78.dp)
+                    .size(18.dp)
                     .clip(CircleShape)
-                    .background(Color.Black),
+                    .background(Color.White.copy(alpha = 0.08f)),
             )
         }
 
         Text(
-            text = when (cameraState) {
-                CameraState.Previewing -> "READY"
-                CameraState.Capturing -> "CAPTURING"
-                CameraState.Processing -> "PROCESSING"
-            },
+            text = cameraStateLabel(cameraState),
             color = Color.White.copy(alpha = 0.8f),
-            fontSize = 12.sp,
+            fontSize = 10.sp,
+            fontFamily = profileFont,
+            fontWeight = FontWeight.SemiBold,
         )
     }
 }
 
 @Composable
-private fun ProfileChromeOverlay(viewfinderType: ViewfinderType) {
-    when (viewfinderType) {
-        ViewfinderType.CRT -> VhsOverlay()
-        ViewfinderType.OPTICAL -> DisposableOverlay()
-        ViewfinderType.LCD -> DigicamOverlay()
+private fun ProfileChromeOverlay(
+    profile: CameraProfile,
+    modifier: Modifier = Modifier,
+) {
+    when (profile.viewfinderType) {
+        ViewfinderType.CRT -> VhsOverlay(modifier = modifier)
+        ViewfinderType.OPTICAL -> DisposableOverlay(modifier = modifier)
+        ViewfinderType.LCD -> DigicamOverlay(modifier = modifier)
     }
 }
 
 @Composable
-private fun VhsOverlay() {
+private fun VhsOverlay(modifier: Modifier = Modifier) {
+    val blinkAlpha by rememberInfiniteTransition(label = "rec-blink").animateFloat(
+        initialValue = 1f,
+        targetValue = 0.15f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 2000),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "rec-alpha",
+    )
+    val batteryLevel by rememberInfiniteTransition(label = "vhs-battery").animateFloat(
+        initialValue = 1f,
+        targetValue = 0.35f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 5000),
+            repeatMode = RepeatMode.Reverse,
+        ),
+        label = "battery-level",
+    )
+
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
             .padding(10.dp)
-            .clip(RoundedCornerShape(28.dp)),
+            .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp, bottomStart = 8.dp, bottomEnd = 8.dp)),
     ) {
         Canvas(modifier = Modifier.fillMaxSize()) {
-            val scanlineSpacing = 6f
+            val scanlineSpacing = 4.dp.toPx()
             var y = 0f
             while (y < size.height) {
                 drawLine(
-                    color = Color.Black.copy(alpha = 0.12f),
+                    color = Color.White.copy(alpha = 0.08f),
                     start = Offset(0f, y),
                     end = Offset(size.width, y),
                     strokeWidth = 1f,
                 )
                 y += scanlineSpacing
             }
+
+            drawRect(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        Color.Transparent,
+                        Color.Transparent,
+                        Color.Black.copy(alpha = 0.2f),
+                    ),
+                    center = center,
+                    radius = size.minDimension * 0.82f,
+                ),
+            )
         }
 
         Row(
@@ -309,61 +456,156 @@ private fun VhsOverlay() {
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(6.dp),
         ) {
-            Canvas(modifier = Modifier.size(10.dp)) {
-                drawCircle(Color.Red)
+            Canvas(modifier = Modifier.size(8.dp)) {
+                drawCircle(Color.Red.copy(alpha = blinkAlpha))
             }
-            Text(text = "REC", color = Color.Red, fontWeight = FontWeight.Bold, fontSize = 12.sp)
-        }
-    }
-}
-
-@Composable
-private fun DisposableOverlay() {
-    Box(modifier = Modifier.fillMaxSize()) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(20.dp)
-                .width(64.dp)
-                .height(42.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(Color.Black.copy(alpha = 0.45f)),
-        )
-
-        Surface(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(18.dp),
-            color = Color.Black.copy(alpha = 0.55f),
-            shape = RoundedCornerShape(4.dp),
-        ) {
             Text(
-                text = "24",
-                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                color = Color(0xFFFFF17A),
+                text = "REC",
+                color = Color.Red.copy(alpha = blinkAlpha),
                 fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+                fontFamily = VintageCamTypography.vhsFont,
             )
         }
+
+        BatteryMeter(
+            level = batteryLevel,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(12.dp),
+        )
     }
 }
 
 @Composable
-private fun DigicamOverlay() {
-    Box(modifier = Modifier.fillMaxSize()) {
+private fun BatteryMeter(
+    level: Float,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier = modifier.size(28.dp, 14.dp)) {
+        val bodyWidth = size.width - 4f
+        val bodyHeight = size.height
+        drawRoundRect(
+            color = Color.White.copy(alpha = 0.8f),
+            topLeft = Offset(0f, 0f),
+            size = Size(bodyWidth, bodyHeight),
+            style = Stroke(width = 1.4f),
+        )
+        drawRect(
+            color = Color.White.copy(alpha = 0.8f),
+            topLeft = Offset(bodyWidth, bodyHeight * 0.3f),
+            size = Size(4f, bodyHeight * 0.4f),
+        )
+
+        val fillWidth = (bodyWidth - 4f) * level.coerceIn(0f, 1f)
+        drawRect(
+            color = if (level > 0.4f) Color.White.copy(alpha = 0.9f) else Color(0xFFFFD700),
+            topLeft = Offset(2f, 2f),
+            size = Size(fillWidth, bodyHeight - 4f),
+        )
+    }
+}
+
+@Composable
+private fun DisposableOverlay(modifier: Modifier = Modifier) {
+    Box(modifier = modifier.fillMaxSize()) {
+        Text(
+            text = "1998.05.11",
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(16.dp),
+            color = Color(0xFFFFD700),
+            fontSize = 12.sp,
+            fontFamily = VintageCamTypography.filmFont,
+            fontWeight = FontWeight.Bold,
+        )
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth(0.6f)
+                .fillMaxHeight(0.45f)
+                .border(2.dp, Color.White.copy(alpha = 0.9f), RoundedCornerShape(4.dp)),
+        )
+
+        Text(
+            text = "024",
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+            color = Color.White,
+            fontSize = 18.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+        )
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(96.dp),
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.22f)),
+                    ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DigicamOverlay(modifier: Modifier = Modifier) {
+    Box(modifier = modifier.fillMaxSize()) {
         Surface(
             modifier = Modifier
                 .align(Alignment.TopCenter)
-                .padding(top = 18.dp),
+                .fillMaxWidth()
+                .height(48.dp)
+                .padding(top = 0.dp),
             shape = RoundedCornerShape(10.dp),
             color = Color.Black.copy(alpha = 0.65f),
         ) {
             Row(
-                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text("1/60", color = Color.White, fontSize = 11.sp)
-                Text("BAT 82%", color = Color.White, fontSize = 11.sp)
-                Text("AUTO", color = Color.White, fontSize = 11.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Filled.BatteryFull,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Text("3B", color = Color.White, fontSize = 10.sp, fontFamily = VintageCamTypography.digitalFont)
+                    Icon(
+                        imageVector = Icons.Filled.SdStorage,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Text("SD", color = Color.White, fontSize = 10.sp, fontFamily = VintageCamTypography.digitalFont)
+                    Icon(
+                        imageVector = Icons.Filled.FlashOn,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(14.dp),
+                    )
+                    Text("AUTO", color = Color.White, fontSize = 10.sp, fontFamily = VintageCamTypography.digitalFont)
+                }
+
+                Text(
+                    "2.0MP",
+                    color = Color.White,
+                    fontSize = 10.sp,
+                    fontFamily = VintageCamTypography.digitalFont,
+                    fontWeight = FontWeight.Medium,
+                )
             }
         }
 
@@ -379,5 +621,33 @@ private fun DigicamOverlay() {
                 ),
             )
         }
+    }
+}
+
+private fun cameraStateLabel(cameraState: CameraState): String {
+    return when (cameraState) {
+        CameraState.Previewing -> "READY"
+        CameraState.Capturing -> "REC"
+        CameraState.Processing -> "BUSY"
+    }
+}
+
+private fun CameraProfile.previewShape(): RoundedCornerShape? {
+    return when (viewfinderType) {
+        ViewfinderType.CRT -> RoundedCornerShape(
+            topStart = 32.dp,
+            topEnd = 32.dp,
+            bottomStart = 8.dp,
+            bottomEnd = 8.dp,
+        )
+        else -> null
+    }
+}
+
+private fun CameraProfile.fontFamily(): FontFamily {
+    return when (era) {
+        Era.EIGHTIES -> VintageCamTypography.vhsFont
+        Era.NINETIES -> VintageCamTypography.filmFont
+        Era.TWO_THOUSANDS -> VintageCamTypography.digitalFont
     }
 }

@@ -3,7 +3,10 @@ package com.vintagecam.app
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.material3.Text
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import com.vintagecam.app.ui.viewfinder.ViewfinderScreen
 import com.vintagecam.app.ui.theme.VintageCamTheme
 import dagger.hilt.android.AndroidEntryPoint
 
@@ -13,7 +16,12 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setContent {
             VintageCamTheme {
-                Text("VintageCam - Coming Soon")
+                val navController = rememberNavController()
+                NavHost(navController = navController, startDestination = "viewfinder") {
+                    composable("viewfinder") {
+                        ViewfinderScreen()
+                    }
+                }
             }
         }
     }

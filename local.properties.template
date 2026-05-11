@@ -1,0 +1,15 @@
+# Android SDK path
+# Set this to your Android SDK location
+# Example on macOS: /Users/username/Library/Android/sdk
+# Example on Linux: /home/username/Android/Sdk
+# Example on Windows: C:\\Users\\username\\AppData\\Local\\Android\\Sdk
+sdk.dir=/home/atul/Android/Sdk
+
+# Optional: NDK path (needed only if using native code)
+# ndk.dir=
+
+# Optional: Build cache directory
+# android.buildCacheDir=
+
+# Optional: Gradle JVM heap size
+# org.gradle.jvmargs=-Xmx2048m

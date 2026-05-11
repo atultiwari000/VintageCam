@@ -1,0 +1,2758 @@
+=== PROJECT STRUCTURE ===
+./app/build.gradle.kts
+./app/src/main/AndroidManifest.xml
+./app/src/main/java/com/vintagecam/app/audio/CameraSoundEngine.kt
+./app/src/main/java/com/vintagecam/app/audio/SoundPoolEngine.kt
+./app/src/main/java/com/vintagecam/app/di/AppModule.kt
+./app/src/main/java/com/vintagecam/app/di/StartupEntryPoint.kt
+./app/src/main/java/com/vintagecam/app/MainActivity.kt
+./app/src/main/java/com/vintagecam/app/ui/gallery/FilmRollScreen.kt
+./app/src/main/java/com/vintagecam/app/ui/theme/Theme.kt
+./app/src/main/java/com/vintagecam/app/ui/theme/Type.kt
+./app/src/main/java/com/vintagecam/app/ui/viewfinder/ViewfinderScreen.kt
+./app/src/main/java/com/vintagecam/app/ui/viewfinder/ViewfinderViewModel.kt
+./app/src/main/java/com/vintagecam/app/VintageCamApplication.kt
+./app/src/main/res/values/colors.xml
+./app/src/main/res/values/strings.xml
+./app/src/main/res/values/themes.xml
+./build.gradle.kts
+./core/camera-engine/build.gradle.kts
+./core/camera-engine/src/main/AndroidManifest.xml
+./core/camera-engine/src/main/java/com/vintagecam/camera/CameraEngine.kt
+./core/camera-engine/src/main/java/com/vintagecam/camera/CameraXEngineImpl.kt
+./core/camera-engine/src/main/java/com/vintagecam/camera/capture/CaptureEvent.kt
+./core/camera-engine/src/main/java/com/vintagecam/camera/capture/CapturePostProcessor.kt
+./core/camera-engine/src/main/java/com/vintagecam/camera/capture/GallerySaver.kt
+./core/camera-engine/src/main/java/com/vintagecam/camera/capture/ImageProxyExtensions.kt
+./core/camera-engine/src/main/java/com/vintagecam/camera/pipeline/GlPrimitives.kt
+./core/camera-engine/src/main/java/com/vintagecam/camera/pipeline/PreviewFilterRenderer.kt
+./core/camera-engine/src/main/java/com/vintagecam/camera/pipeline/PreviewShaderSources.kt
+./core/camera-engine/src/main/java/com/vintagecam/camera/pipeline/ShaderPipeline.kt
+./core/profiles/build.gradle.kts
+./core/profiles/src/main/AndroidManifest.xml
+./core/profiles/src/main/java/com/vintagecam/profiles/CameraProfile.kt
+./core/profiles/src/main/java/com/vintagecam/profiles/data/CapturedPhoto.kt
+./core/profiles/src/main/java/com/vintagecam/profiles/data/ProfileRepository.kt
+./core/profiles/src/main/java/com/vintagecam/profiles/data/SessionManager.kt
+./.gradle
+./settings.gradle.kts
+
+=== ALL KOTLIN SOURCE ===
+
+=== FILE: ./app/src/main/java/com/vintagecam/app/ui/viewfinder/ViewfinderScreen.kt ===
+package com.vintagecam.app.ui.viewfinder
+
+import android.Manifest
+import android.content.Context
+import androidx.camera.core.Preview
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FlashOff
+import androidx.compose.material.icons.filled.FlashOn
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.material.icons.filled.SwitchCamera
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.hilt.navigation.compose.hiltViewModel
+import com.google.accompanist.permissions.ExperimentalPermissionsApi
+import com.google.accompanist.permissions.PermissionStatus
+import com.google.accompanist.permissions.rememberPermissionState
+import com.vintagecam.app.ui.theme.VintageCamTypography
+import com.vintagecam.profiles.CameraProfile
+import com.vintagecam.profiles.Era
+import com.vintagecam.profiles.ViewfinderType
+import com.vintagecam.camera.pipeline.PreviewFilterRenderer
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+
+@OptIn(ExperimentalPermissionsApi::class)
+@Composable
+fun ViewfinderScreen(
+    viewModel: ViewfinderViewModel = hiltViewModel(),
+    onOpenFilmRoll: () -> Unit,
+) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val uiState by viewModel.uiState.collectAsState()
+    val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
+
+    LaunchedEffect(Unit) {
+        if (cameraPermissionState.status != PermissionStatus.Granted) {
+            cameraPermissionState.launchPermissionRequest()
+        }
+    }
+
+    when (cameraPermissionState.status) {
+        is PermissionStatus.Denied -> PermissionDeniedContent()
+        PermissionStatus.Granted -> {
+            ViewfinderContent(
+                uiState = uiState,
+                onSwitchCamera = viewModel::onSwitchCamera,
+                onCapture = viewModel::onCapture,
+                onToggleFlash = viewModel::onToggleFlash,
+                onProfilePageChanged = viewModel::onProfileSelected,
+                onGalleryClick = onOpenFilmRoll,
+                onOpenFilmRoll = onOpenFilmRoll,
+                onBindPreview = { owner, previewView ->
+                    viewModel.bindCamera(owner, previewView)
+                },
+            )
+        }
+    }
+}
+
+@Composable
+private fun PermissionDeniedContent() {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = "Camera permission is required",
+            color = Color.White,
+            style = MaterialTheme.typography.bodyLarge,
+        )
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun ViewfinderContent(
+    uiState: ViewfinderUiState,
+    onSwitchCamera: () -> Unit,
+    onCapture: () -> Unit,
+    onToggleFlash: () -> Unit,
+    onProfilePageChanged: (Int) -> Unit,
+    onGalleryClick: () -> Unit,
+    onOpenFilmRoll: () -> Unit,
+    onBindPreview: (androidx.lifecycle.LifecycleOwner, androidx.camera.view.PreviewView) -> Unit,
+) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val pagerState = rememberPagerState(
+        initialPage = uiState.currentProfileIndex,
+        pageCount = { uiState.profiles.size.coerceAtLeast(1) },
+    )
+    val currentProfile = uiState.profiles.getOrNull(uiState.currentProfileIndex)
+    val lifecycleOwner = LocalLifecycleOwner.current
+
+    LaunchedEffect(pagerState.currentPage) {
+        if (uiState.profiles.isNotEmpty()) {
+            onProfilePageChanged(pagerState.currentPage)
+        }
+    }
+
+    LaunchedEffect(uiState.currentProfileIndex) {
+        if (pagerState.currentPage != uiState.currentProfileIndex) {
+            pagerState.animateScrollToPage(uiState.currentProfileIndex)
+        }
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        // Full-screen preview with zero padding
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+            userScrollEnabled = uiState.profiles.isNotEmpty(),
+        ) { _ ->
+                    CameraPreview(
+                        context = context,
+                        modifier = Modifier.fillMaxSize(),
+                        profile = currentProfile,
+                        lifecycleOwner = lifecycleOwner,
+                        onBindPreview = { owner, previewView ->
+                            // Start preview once when the PreviewView is created
+                            onBindPreview(owner, previewView)
+                        }
+                    )
+        }
+
+        // Chrome overlay (draws on top of full-screen preview)
+        currentProfile?.let {
+            ProfileChromeOverlay(profile = it, modifier = Modifier.fillMaxSize())
+        }
+
+        // Top controls
+        TopControlsRow(
+            flashEnabled = uiState.flashEnabled,
+            onToggleFlash = onToggleFlash,
+            onSwitchCamera = onSwitchCamera,
+            onGalleryClick = onGalleryClick,
+            modifier = Modifier
+                .fillMaxWidth()
+                .align(Alignment.TopCenter)
+                .windowInsetsPadding(WindowInsets.statusBars)
+                .padding(horizontal = 16.dp, vertical = 24.dp),
+        )
+
+        // Capture area stays fixed at bottom center across state changes.
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(bottom = 48.dp),
+        ) {
+            CaptureArea(
+                profile = currentProfile,
+                cameraState = uiState.cameraState,
+                onCapture = {
+                    scope.launch { onCapture() }
+                },
+                onOpenFilmRoll = onOpenFilmRoll,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CameraPreview(
+    context: Context,
+    modifier: Modifier,
+    profile: CameraProfile?,
+    lifecycleOwner: androidx.lifecycle.LifecycleOwner,
+    onBindPreview: (androidx.lifecycle.LifecycleOwner, androidx.camera.view.PreviewView) -> Unit,
+) {
+    AndroidView(
+        factory = { ctx ->
+            androidx.camera.view.PreviewView(ctx).apply {
+                scaleType = androidx.camera.view.PreviewView.ScaleType.FILL_START
+                // Bind camera once when the view is created
+                try {
+                    onBindPreview(lifecycleOwner, this)
+                } catch (e: Exception) {
+                    android.util.Log.e("Viewfinder", "Failed to bind preview", e)
+                }
+            }
+        },
+        modifier = modifier,
+    )
+
+    // If we still want to apply shader profile updates elsewhere, keep using the profile value
+}
+
+@Composable
+private fun TopControlsRow(
+    flashEnabled: Boolean,
+    onToggleFlash: () -> Unit,
+    onSwitchCamera: () -> Unit,
+    onGalleryClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier,
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onToggleFlash) {
+            Icon(
+                imageVector = if (flashEnabled) Icons.Filled.FlashOn else Icons.Filled.FlashOff,
+                contentDescription = if (flashEnabled) "Turn flash off" else "Turn flash on",
+                tint = Color.White.copy(alpha = 0.8f),
+                modifier = Modifier.size(24.dp),
+            )
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            IconButton(onClick = onSwitchCamera) {
+                Icon(
+                    imageVector = Icons.Filled.SwitchCamera,
+                    contentDescription = "Switch camera",
+                    tint = Color.White.copy(alpha = 0.8f),
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+
+            IconButton(onClick = onGalleryClick) {
+                Icon(
+                    imageVector = Icons.Filled.PhotoLibrary,
+                    contentDescription = "Open gallery",
+                    tint = Color.White.copy(alpha = 0.8f),
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun CaptureArea(
+    profile: CameraProfile?,
+    cameraState: CameraState,
+    onCapture: () -> Unit,
+    onOpenFilmRoll: () -> Unit,
+) {
+    val profileFont = profile?.fontFamily() ?: VintageCamTypography.digitalFont
+    var showFlash by remember { mutableStateOf(false) }
+
+    LaunchedEffect(cameraState) {
+        if (cameraState == CameraState.Capturing) {
+            showFlash = true
+            delay(100)
+            showFlash = false
+        }
+    }
+
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(
+            text = profile?.displayName.orEmpty().uppercase(),
+            color = Color.White,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Medium,
+            fontFamily = profileFont,
+            modifier = Modifier.padding(bottom = 16.dp),
+        )
+
+        Text(
+            text = when (cameraState) {
+                CameraState.Capturing -> "BUSY"
+                CameraState.Processing -> "PROC"
+                CameraState.Previewing -> "READY"
+            },
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 10.sp,
+            fontFamily = profileFont,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+
+        CaptureButton(
+            onClick = onCapture,
+            onSwipeUp = onOpenFilmRoll,
+            enabled = cameraState == CameraState.Previewing,
+            modifier = Modifier.size(72.dp),
+        )
+
+        if (showFlash) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.White.copy(alpha = 0.6f)),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CaptureButton(
+    onClick: () -> Unit,
+    onSwipeUp: () -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val haptic = LocalHapticFeedback.current
+    var isPressed by remember { mutableStateOf(false) }
+
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPressed) 0.9f else 1f,
+        animationSpec = tween(100),
+        label = "capture-scale",
+    )
+
+    Box(
+        modifier = modifier
+            .scale(scale)
+            .pointerInput(enabled) {
+                detectTapGestures(
+                    onPress = {
+                        if (!enabled) return@detectTapGestures
+                        isPressed = true
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        tryAwaitRelease()
+                        isPressed = false
+                        onClick()
+                    },
+                )
+            }
+            .pointerInput(onSwipeUp) {
+                detectVerticalDragGestures { _, dragAmount ->
+                    if (dragAmount < -20f) {
+                        onSwipeUp()
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .border(width = 4.dp, color = Color.White, shape = CircleShape),
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxSize(0.85f)
+                .background(Color.Black, CircleShape),
+        )
+    }
+}
+
+@Composable
+private fun ProfileChromeOverlay(
+    profile: CameraProfile,
+    modifier: Modifier = Modifier,
+) {
+    when (profile.viewfinderType) {
+        ViewfinderType.CRT -> VhsOverlay(modifier = modifier)
+        ViewfinderType.OPTICAL -> DisposableOverlay(modifier = modifier)
+        ViewfinderType.LCD -> DigicamOverlay(modifier = modifier)
+    }
+}
+
+@Composable
+private fun VhsOverlay(modifier: Modifier = Modifier) {
+    Box(
+        modifier = modifier.fillMaxSize(),
+    ) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            // Scanlines across full screen
+            val scanlineSpacing = 4.dp.toPx()
+            var y = 0f
+            while (y < size.height) {
+                drawLine(
+                    color = Color.White.copy(alpha = 0.08f),
+                    start = Offset(0f, y),
+                    end = Offset(size.width, y),
+                    strokeWidth = 1f,
+                )
+                y += scanlineSpacing
+            }
+
+            // Vignette gradient
+            drawRect(
+                brush = Brush.radialGradient(
+                    colors = listOf(
+                        Color.Transparent,
+                        Color.Transparent,
+                        Color.Black.copy(alpha = 0.2f),
+                    ),
+                    center = center,
+                    radius = size.minDimension * 0.82f,
+                ),
+            )
+        }
+
+        // Static red dot + "STBY" in top left
+        Row(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            Canvas(modifier = Modifier.size(8.dp)) {
+                drawCircle(Color.Red)
+            }
+            Text(
+                text = "STBY",
+                color = Color.Red,
+                fontWeight = FontWeight.Bold,
+                fontSize = 12.sp,
+                fontFamily = VintageCamTypography.vhsFont,
+            )
+        }
+    }
+}
+
+@Composable
+private fun DisposableOverlay(modifier: Modifier = Modifier) {
+    Box(modifier = modifier.fillMaxSize()) {
+        Text(
+            text = "1998.05.11",
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(16.dp),
+            color = Color(0xFFFFD700),
+            fontSize = 12.sp,
+            fontFamily = VintageCamTypography.filmFont,
+            fontWeight = FontWeight.Bold,
+        )
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth(0.6f)
+                .fillMaxHeight(0.45f)
+                .border(2.dp, Color.White.copy(alpha = 0.9f), RoundedCornerShape(4.dp)),
+        )
+
+        Text(
+            text = "024",
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+            color = Color.White,
+            fontSize = 18.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+        )
+
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .height(96.dp),
+        ) {
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                drawRect(
+                    brush = Brush.verticalGradient(
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.22f)),
+                    ),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun DigicamOverlay(modifier: Modifier = Modifier) {
+    Box(modifier = modifier.fillMaxSize()) {
+        // Small green "READY" indicator in top corner
+        Text(
+            text = "READY",
+            color = Color.Green,
+            fontSize = 10.sp,
+            fontFamily = VintageCamTypography.digitalFont,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(12.dp),
+        )
+
+        // Subtle gradient at bottom
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(120.dp)
+                .align(Alignment.BottomCenter),
+        ) {
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.25f)),
+                ),
+            )
+        }
+    }
+}
+
+private fun cameraStateLabel(cameraState: CameraState): String {
+    return when (cameraState) {
+        CameraState.Previewing -> "READY"
+        CameraState.Capturing -> "REC"
+        CameraState.Processing -> "BUSY"
+    }
+}
+
+private fun CameraProfile.fontFamily(): FontFamily {
+    return when (era) {
+        Era.EIGHTIES -> VintageCamTypography.vhsFont
+        Era.NINETIES -> VintageCamTypography.filmFont
+        Era.TWO_THOUSANDS -> VintageCamTypography.digitalFont
+    }
+}
+
+=== FILE: ./app/src/main/java/com/vintagecam/app/ui/viewfinder/ViewfinderViewModel.kt ===
+package com.vintagecam.app.ui.viewfinder
+
+import android.content.Context
+import androidx.camera.core.Preview
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.qualifiers.ApplicationContext
+import com.vintagecam.app.audio.CameraSoundEngine
+import com.vintagecam.camera.CameraEngine
+import com.vintagecam.camera.CaptureResult
+import com.vintagecam.profiles.CameraProfile
+import com.vintagecam.profiles.data.CapturedPhoto
+import com.vintagecam.profiles.data.ProfileRepository
+import com.vintagecam.profiles.data.SessionManager
+import dagger.hilt.android.lifecycle.HiltViewModel
+import javax.inject.Inject
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+sealed interface CameraState {
+    data object Previewing : CameraState
+    data object Capturing : CameraState
+    data object Processing : CameraState
+}
+
+data class ViewfinderUiState(
+    val cameraState: CameraState = CameraState.Previewing,
+    val profiles: List<CameraProfile> = emptyList(),
+    val currentProfileIndex: Int = 0,
+    val flashEnabled: Boolean = false,
+    val capturedPhotos: List<CapturedPhoto> = emptyList(),
+)
+
+@HiltViewModel
+class ViewfinderViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
+    private val cameraEngine: CameraEngine,
+    private val cameraSoundEngine: CameraSoundEngine,
+    private val sessionManager: SessionManager,
+    profileRepository: ProfileRepository,
+) : ViewModel() {
+
+    private val profiles: List<CameraProfile> = profileRepository.getProfiles()
+
+    private val _uiState = MutableStateFlow(
+        ViewfinderUiState(
+            profiles = profiles,
+            currentProfileIndex = 0,
+            capturedPhotos = sessionManager.getCurrentRollPhotos(),
+        ),
+    )
+    val uiState: StateFlow<ViewfinderUiState> = _uiState.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            cameraSoundEngine.preload(appContext, profiles)
+        }
+    }
+
+    fun bindCamera(lifecycleOwner: LifecycleOwner, previewView: androidx.camera.view.PreviewView) {
+        viewModelScope.launch {
+            try {
+                cameraEngine.startPreview(lifecycleOwner, previewView.surfaceProvider)
+            } catch (e: Exception) {
+                android.util.Log.e("ViewfinderViewModel", "Failed to bind camera", e)
+            }
+        }
+    }
+
+    fun onProfileSelected(index: Int) {
+        if (index !in profiles.indices) return
+        cameraEngine.applyProfile(profiles[index])
+        _uiState.update { current ->
+            current.copy(currentProfileIndex = index, cameraState = CameraState.Previewing)
+        }
+    }
+
+    fun onToggleFlash() {
+        _uiState.update { current ->
+            current.copy(flashEnabled = !current.flashEnabled)
+        }
+    }
+
+    fun onSwitchCamera() {
+        cameraEngine.switchCamera()
+    }
+
+    fun onCapture() {
+        // Only allow capture when in Previewing state
+        if (_uiState.value.cameraState != CameraState.Previewing) return
+
+        viewModelScope.launch {
+            val profile = profiles.getOrNull(_uiState.value.currentProfileIndex) ?: return@launch
+
+            try {
+                // Start capture sequence
+                _uiState.update { it.copy(cameraState = CameraState.Capturing) }
+
+                // Haptic handled by UI; play shutter sound immediately
+                cameraSoundEngine.playShutter(profile)
+
+                // Wait for capture latency (simulates vintage camera shutter delay)
+                delay(profile.captureLatencyMs)
+
+                // Transition to processing state and start actual capture
+                _uiState.update { it.copy(cameraState = CameraState.Processing) }
+
+                // Suspend until capture completes
+                val result: CaptureResult = cameraEngine.capturePhoto(profile)
+
+                val capturedPhoto = CapturedPhoto(
+                    bitmap = result.bitmap,
+                    profile = profile,
+                    timestampMillis = result.capturedAtMillis,
+                    uri = result.uri,
+                )
+
+                // Add to session and update UI
+                sessionManager.addCapturedPhoto(capturedPhoto)
+                _uiState.update { state ->
+                    state.copy(
+                        cameraState = CameraState.Previewing,
+                        capturedPhotos = state.capturedPhotos + capturedPhoto,
+                    )
+                }
+                android.util.Log.d("Capture", "Photo saved: ${result.uri}")
+            } catch (e: Exception) {
+                android.util.Log.e("ViewfinderViewModel", "Capture failed", e)
+                _uiState.update { it.copy(cameraState = CameraState.Previewing) }
+            }
+        }
+    }
+
+    override fun onCleared() {
+        cameraEngine.stopPreview()
+        super.onCleared()
+    }
+}
+
+=== FILE: ./app/src/main/java/com/vintagecam/app/ui/gallery/FilmRollScreen.kt ===
+package com.vintagecam.app.ui.gallery
+
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import com.vintagecam.profiles.CameraProfile
+import com.vintagecam.profiles.Era
+import com.vintagecam.profiles.data.CapturedPhoto
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+fun FilmRollScreen(
+    photos: List<CapturedPhoto>,
+    onClose: () -> Unit,
+) {
+    BackHandler(onBack = onClose)
+    val pagerState = rememberPagerState(pageCount = { photos.size.coerceAtLeast(1) })
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .pointerInput(onClose) {
+                detectVerticalDragGestures { _, dragAmount ->
+                    if (dragAmount > 28f) onClose()
+                }
+            },
+    ) {
+        if (photos.isEmpty()) {
+            EmptyRollState(onClose = onClose)
+        } else {
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+            ) { page ->
+                val photo = photos[page]
+                var showMetadata by rememberSaveable(photo.uri.toString()) { mutableStateOf(false) }
+
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Image(
+                        bitmap = photo.bitmap.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier
+                            .padding(24.dp)
+                            .border(
+                                width = borderWidthFor(photo.profile),
+                                color = Color.White,
+                                shape = RoundedCornerShape(2.dp),
+                            )
+                            .clip(RoundedCornerShape(2.dp))
+                            .combinedClickable(onLongClick = { showMetadata = !showMetadata }) { },
+                    )
+
+                    if (showMetadata) {
+                        MetadataOverlay(photo = photo)
+                    }
+                }
+            }
+        }
+
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.TopEnd,
+        ) {
+            IconButton(
+                onClick = onClose,
+                modifier = Modifier.padding(12.dp),
+            ) {
+                Icon(imageVector = Icons.Default.Close, contentDescription = "Close film roll", tint = Color.White)
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmptyRollState(onClose: () -> Unit) {
+    Surface(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        color = Color.Black,
+    ) {
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text("No developed photos yet", color = Color.White, fontSize = 18.sp)
+            Text("Capture a frame to start a roll", color = Color.White.copy(alpha = 0.7f), fontSize = 12.sp)
+            Text("Swipe down or tap back to return", color = Color.White.copy(alpha = 0.5f), fontSize = 10.sp)
+        }
+    }
+}
+
+@Composable
+private fun MetadataOverlay(photo: CapturedPhoto) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Column(
+            modifier = Modifier.padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Text(photo.profile.displayName, color = Color.White, fontSize = 12.sp, fontFamily = fontFamilyFor(photo.profile))
+            Text(formatTimestamp(photo.timestampMillis), color = Color.White.copy(alpha = 0.65f), fontSize = 10.sp)
+        }
+    }
+}
+
+private fun borderWidthFor(profile: CameraProfile) = when (profile.era) {
+    Era.NINETIES -> 12.dp
+    Era.EIGHTIES -> 8.dp
+    Era.TWO_THOUSANDS -> 4.dp
+}
+
+private fun fontFamilyFor(profile: CameraProfile): FontFamily = when (profile.era) {
+    Era.EIGHTIES -> FontFamily.Monospace
+    Era.NINETIES -> FontFamily.Serif
+    Era.TWO_THOUSANDS -> FontFamily.SansSerif
+}
+
+private fun formatTimestamp(millis: Long): String {
+    return SimpleDateFormat("yyyy.MM.dd HH:mm", Locale.US).format(Date(millis))
+}
+
+=== FILE: ./app/src/main/java/com/vintagecam/app/ui/theme/Theme.kt ===
+package com.vintagecam.app.ui.theme
+
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.darkColorScheme
+import androidx.compose.runtime.Composable
+
+private val VintageDarkColorScheme = darkColorScheme(
+    primary = androidx.compose.ui.graphics.Color(0xFFFFFFFF),
+    onPrimary = androidx.compose.ui.graphics.Color(0xFF000000),
+    secondary = androidx.compose.ui.graphics.Color(0xFF9A9A9A),
+    onSecondary = androidx.compose.ui.graphics.Color(0xFF000000),
+    background = androidx.compose.ui.graphics.Color(0xFF000000),
+    onBackground = androidx.compose.ui.graphics.Color(0xFFFFFFFF),
+    surface = androidx.compose.ui.graphics.Color(0xFF000000),
+    onSurface = androidx.compose.ui.graphics.Color(0xFFFFFFFF),
+)
+
+@Composable
+fun VintageCamTheme(content: @Composable () -> Unit) {
+    MaterialTheme(colorScheme = VintageDarkColorScheme, content = content)
+}
+
+=== FILE: ./app/src/main/java/com/vintagecam/app/ui/theme/Type.kt ===
+package com.vintagecam.app.ui.theme
+
+import androidx.compose.ui.text.font.FontFamily
+
+object VintageCamTypography {
+    val vhsFont: FontFamily = FontFamily.Monospace
+    val filmFont: FontFamily = FontFamily.Serif
+    val digitalFont: FontFamily = FontFamily.SansSerif
+}
+=== FILE: ./app/src/main/java/com/vintagecam/app/di/AppModule.kt ===
+package com.vintagecam.app.di
+
+import com.vintagecam.app.audio.CameraSoundEngine
+import com.vintagecam.app.audio.SoundPoolEngine
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
+import com.vintagecam.camera.CameraEngine
+import com.vintagecam.camera.CameraXEngineImpl
+import dagger.Binds
+import dagger.Module
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+
+@Module
+@InstallIn(SingletonComponent::class)
+abstract class AppModule {
+    @Binds
+    @ExperimentalCamera2Interop
+    abstract fun bindCameraEngine(impl: CameraXEngineImpl): CameraEngine
+
+    @Binds
+    abstract fun bindCameraSoundEngine(impl: SoundPoolEngine): CameraSoundEngine
+}
+
+=== FILE: ./app/src/main/java/com/vintagecam/app/di/StartupEntryPoint.kt ===
+package com.vintagecam.app.di
+
+import com.vintagecam.app.audio.CameraSoundEngine
+import com.vintagecam.profiles.data.ProfileRepository
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.components.SingletonComponent
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface StartupEntryPoint {
+    val cameraSoundEngine: CameraSoundEngine
+    val profileRepository: ProfileRepository
+}
+
+=== FILE: ./app/src/main/java/com/vintagecam/app/MainActivity.kt ===
+package com.vintagecam.app
+
+import android.Manifest
+import android.content.pm.PackageManager
+import android.os.Bundle
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.collectAsState
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import androidx.core.content.ContextCompat
+import com.vintagecam.app.ui.gallery.FilmRollScreen
+import com.vintagecam.app.ui.viewfinder.ViewfinderScreen
+import com.vintagecam.app.ui.viewfinder.ViewfinderViewModel
+import com.vintagecam.app.ui.theme.VintageCamTheme
+import dagger.hilt.android.AndroidEntryPoint
+import androidx.compose.material3.Text
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+
+@AndroidEntryPoint
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        val permissionLauncher = registerForActivityResult(
+            ActivityResultContracts.RequestPermission()
+        ) { isGranted ->
+            setContentForPermission(isGranted)
+        }
+
+        when {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED -> {
+                setContentForPermission(true)
+            }
+            shouldShowRequestPermissionRationale(Manifest.permission.CAMERA) -> {
+                permissionLauncher.launch(Manifest.permission.CAMERA)
+            }
+            else -> {
+                permissionLauncher.launch(Manifest.permission.CAMERA)
+            }
+        }
+    }
+
+    private fun setContentForPermission(isGranted: Boolean) {
+        setContent {
+            VintageCamTheme {
+                if (isGranted) {
+                    val viewModel: ViewfinderViewModel = hiltViewModel()
+                    val uiState by viewModel.uiState.collectAsState()
+                    val navController = rememberNavController()
+                    NavHost(navController = navController, startDestination = "viewfinder") {
+                        composable("viewfinder") {
+                            ViewfinderScreen(
+                                viewModel = viewModel,
+                                onOpenFilmRoll = { navController.navigate("filmroll") },
+                            )
+                        }
+                        composable("filmroll") {
+                            FilmRollScreen(
+                                photos = uiState.capturedPhotos,
+                                onClose = { navController.popBackStack() },
+                            )
+                        }
+                    }
+                } else {
+                    PermissionDeniedScreen()
+                }
+            }
+        }
+    }
+
+    @androidx.compose.runtime.Composable
+    private fun PermissionDeniedScreen() {
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(text = "Camera permission is required to use VintageCam")
+        }
+    }
+}
+
+=== FILE: ./app/src/main/java/com/vintagecam/app/VintageCamApplication.kt ===
+package com.vintagecam.app
+
+import android.app.Application
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.android.HiltAndroidApp
+import com.vintagecam.app.di.StartupEntryPoint
+
+@HiltAndroidApp
+class VintageCamApplication : Application() {
+	override fun onCreate() {
+		super.onCreate()
+		val entryPoint = EntryPointAccessors.fromApplication(this, StartupEntryPoint::class.java)
+		entryPoint.cameraSoundEngine.preload(this, entryPoint.profileRepository.getProfiles())
+	}
+}
+
+=== FILE: ./app/src/main/java/com/vintagecam/app/audio/CameraSoundEngine.kt ===
+package com.vintagecam.app.audio
+
+import android.content.Context
+import com.vintagecam.profiles.CameraProfile
+
+interface CameraSoundEngine {
+    fun preload(context: Context, profiles: List<CameraProfile>)
+    fun playShutter(profile: CameraProfile)
+    fun release()
+}
+
+=== FILE: ./app/src/main/java/com/vintagecam/app/audio/SoundPoolEngine.kt ===
+package com.vintagecam.app.audio
+
+import android.content.Context
+import android.media.AudioAttributes
+import android.media.SoundPool
+import androidx.annotation.RawRes
+import com.vintagecam.app.R
+import com.vintagecam.profiles.CameraProfile
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class SoundPoolEngine @Inject constructor() : CameraSoundEngine {
+    private val soundPool: SoundPool = SoundPool.Builder()
+        .setMaxStreams(3)
+        .setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build(),
+        )
+        .build()
+
+    private val loadedSounds = mutableMapOf<String, Int>()
+
+    override fun preload(context: Context, profiles: List<CameraProfile>) {
+        if (loadedSounds.isNotEmpty()) return
+        profiles.forEach { profile ->
+            loadedSounds[profile.id] = soundPool.load(context, soundResFor(profile.id), 1)
+        }
+    }
+
+    override fun playShutter(profile: CameraProfile) {
+        val soundId = loadedSounds[profile.id]
+        if (soundId != null && soundId != 0) {
+            soundPool.play(soundId, 1f, 1f, 0, 0, 1f)
+        } else {
+            android.util.Log.w("SoundPoolEngine", "Sound not loaded for ${profile.id}")
+        }
+    }
+
+    override fun release() {
+        loadedSounds.clear()
+        soundPool.release()
+    }
+
+    @RawRes
+    private fun soundResFor(profileId: String): Int {
+        return when (profileId) {
+            "vhs_1985" -> R.raw.shutter_vhs
+            "disposable_1998" -> R.raw.shutter_disposable
+            "digicam_2003" -> R.raw.shutter_digicam
+            else -> R.raw.shutter_default
+        }
+    }
+}
+
+=== FILE: ./core/camera-engine/src/main/java/com/vintagecam/camera/pipeline/ShaderPipeline.kt ===
+package com.vintagecam.camera.pipeline
+
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
+import android.graphics.RadialGradient
+import android.graphics.Rect
+import android.graphics.Shader
+import com.vintagecam.profiles.CameraProfile
+import javax.inject.Inject
+
+interface ShaderPipeline {
+    fun apply(input: Bitmap, profile: CameraProfile): Bitmap
+}
+
+class CpuFilterApplier @Inject constructor() : ShaderPipeline {
+
+    override fun apply(input: Bitmap, profile: CameraProfile): Bitmap {
+        return applyProfile(input, profile)
+    }
+
+    fun applyProfile(input: Bitmap, profile: CameraProfile): Bitmap {
+        val mutableBitmap = input.copy(Bitmap.Config.ARGB_8888, true)
+        val canvas = Canvas(mutableBitmap)
+        val colorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            colorFilter = ColorMatrixColorFilter(toAndroidColorMatrix(profile.colorMatrix))
+        }
+
+        val colorAdjusted = Bitmap.createBitmap(input.width, input.height, Bitmap.Config.ARGB_8888)
+        val colorCanvas = Canvas(colorAdjusted)
+        colorCanvas.drawBitmap(input, 0f, 0f, colorPaint)
+
+        canvas.drawBitmap(colorAdjusted, 0f, 0f, null)
+        applyRadialVignette(canvas, mutableBitmap.width, mutableBitmap.height, profile.vignetteStrength)
+
+        return mutableBitmap
+    }
+
+    private fun toAndroidColorMatrix(matrix3x3: FloatArray): ColorMatrix {
+        val m = if (matrix3x3.size >= 9) matrix3x3 else floatArrayOf(
+            1f, 0f, 0f,
+            0f, 1f, 0f,
+            0f, 0f, 1f,
+        )
+
+        return ColorMatrix(
+            floatArrayOf(
+                m[0], m[1], m[2], 0f, 0f,
+                m[3], m[4], m[5], 0f, 0f,
+                m[6], m[7], m[8], 0f, 0f,
+                0f, 0f, 0f, 1f, 0f,
+            ),
+        )
+    }
+
+    private fun applyRadialVignette(canvas: Canvas, width: Int, height: Int, strength: Float) {
+        val clampedStrength = strength.coerceIn(0f, 1f)
+        if (clampedStrength <= 0f) return
+
+        val radius = maxOf(width, height) * 0.75f
+        val alpha = (180f * clampedStrength).toInt().coerceIn(0, 255)
+
+        val vignettePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            shader = RadialGradient(
+                width / 2f,
+                height / 2f,
+                radius,
+                intArrayOf(
+                    Color.TRANSPARENT,
+                    Color.TRANSPARENT,
+                    Color.argb(alpha, 0, 0, 0),
+                ),
+                floatArrayOf(0.45f, 0.75f, 1f),
+                Shader.TileMode.CLAMP,
+            )
+        }
+
+        canvas.drawRect(Rect(0, 0, width, height), vignettePaint)
+    }
+}
+
+=== FILE: ./core/camera-engine/src/main/java/com/vintagecam/camera/pipeline/PreviewFilterRenderer.kt ===
+package com.vintagecam.camera.pipeline
+
+import android.graphics.SurfaceTexture
+import android.opengl.GLES11Ext
+import android.opengl.GLES20
+import android.opengl.GLSurfaceView
+import android.opengl.Matrix
+import android.view.Surface
+import androidx.camera.core.Preview
+import com.vintagecam.profiles.CameraProfile
+import com.vintagecam.profiles.ShaderType
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.FloatBuffer
+import java.util.concurrent.Executor
+
+class PreviewFilterRenderer(
+    private val onFrameAvailable: (SurfaceTexture) -> Unit,
+) : GLSurfaceView.Renderer, SurfaceTexture.OnFrameAvailableListener {
+
+    private val shaderChain = mutableListOf<FilterShader>()
+    private val fbos = mutableListOf<FrameBufferObject>()
+    private val textureTransform = FloatArray(16)
+    private val directExecutor = Executor { command -> command.run() }
+
+    private var cameraTextureId = 0
+    private var copyProgramId = 0
+    private var screenProgramId = 0
+    private var cameraSurfaceTexture: SurfaceTexture? = null
+    private var cameraSurface: Surface? = null
+    private var requestRender: (() -> Unit)? = null
+    private var activeProfile: CameraProfile? = null
+    private var surfaceWidth = 0
+    private var surfaceHeight = 0
+    private var surfaceReadyDispatched = false
+    private var frameAvailable = false
+
+    private val vertexBuffer: FloatBuffer = floatBuffer(
+        -1f, -1f,
+        1f, -1f,
+        -1f, 1f,
+        1f, 1f,
+    )
+
+    private val textureBuffer: FloatBuffer = floatBuffer(
+        0f, 1f,
+        1f, 1f,
+        0f, 0f,
+        1f, 0f,
+    )
+
+    val previewSurfaceProvider: Preview.SurfaceProvider = Preview.SurfaceProvider { request ->
+        val surfaceTexture = cameraSurfaceTexture
+        if (surfaceTexture == null) {
+            request.willNotProvideSurface()
+            return@SurfaceProvider
+        }
+
+        surfaceTexture.setDefaultBufferSize(request.resolution.width, request.resolution.height)
+        val surface = Surface(surfaceTexture)
+        cameraSurface = surface
+        request.provideSurface(surface, directExecutor) { surface.release() }
+    }
+
+    fun attachRenderRequest(requestRender: () -> Unit) {
+        this.requestRender = requestRender
+    }
+
+    fun setProfile(profile: CameraProfile) {
+        activeProfile = profile
+        rebuildShaderChain()
+        recreateFrameBuffers()
+    }
+
+    override fun onSurfaceCreated(gl: javax.microedition.khronos.opengles.GL10?, config: javax.microedition.khronos.egl.EGLConfig?) {
+        cameraTextureId = createExternalTexture()
+        cameraSurfaceTexture = SurfaceTexture(cameraTextureId).apply {
+            setOnFrameAvailableListener(this@PreviewFilterRenderer)
+        }
+        copyProgramId = createProgram(QUAD_VERTEX_SHADER, CAMERA_COPY_FRAGMENT_SHADER)
+        screenProgramId = createProgram(QUAD_VERTEX_SHADER, SIMPLE_TEXTURE_FRAGMENT_SHADER)
+
+        rebuildShaderChain()
+        if (!surfaceReadyDispatched) {
+            surfaceReadyDispatched = true
+            cameraSurfaceTexture?.let(onFrameAvailable)
+        }
+    }
+
+    override fun onSurfaceChanged(gl: javax.microedition.khronos.opengles.GL10?, width: Int, height: Int) {
+        surfaceWidth = width
+        surfaceHeight = height
+        Matrix.setIdentityM(textureTransform, 0)
+        recreateFrameBuffers()
+    }
+
+    override fun onDrawFrame(gl: javax.microedition.khronos.opengles.GL10?) {
+        val surfaceTexture = cameraSurfaceTexture ?: return
+        if (frameAvailable) {
+            surfaceTexture.updateTexImage()
+            surfaceTexture.getTransformMatrix(textureTransform)
+            frameAvailable = false
+        }
+
+        if (surfaceWidth == 0 || surfaceHeight == 0) return
+
+        if (shaderChain.isEmpty()) {
+            drawCameraCopyToScreen()
+            return
+        }
+
+        renderToFbo(0, cameraTextureId, copyProgramId, externalInput = true, outputToScreen = false)
+
+        for (index in shaderChain.indices) {
+            val shader = shaderChain[index]
+            val inputTexture = fbos[index].textureId
+            val isLast = index == shaderChain.lastIndex
+            val targetFbo = if (isLast) 0 else fbos[index + 1].frameBufferId
+            renderShader(shader, inputTexture, targetFbo, isLast)
+        }
+    }
+
+    override fun onFrameAvailable(surfaceTexture: SurfaceTexture?) {
+        frameAvailable = true
+        requestRender?.invoke()
+    }
+
+    private fun drawCameraCopyToScreen() {
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+        GLES20.glViewport(0, 0, surfaceWidth, surfaceHeight)
+        GLES20.glUseProgram(copyProgramId)
+        bindCommonAttributes(copyProgramId)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, cameraTextureId)
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(copyProgramId, "uTexture"), 0)
+        GLES20.glUniformMatrix4fv(GLES20.glGetUniformLocation(copyProgramId, "uTexMatrix"), 1, false, textureTransform, 0)
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, 0)
+    }
+
+    private fun renderToFbo(index: Int, textureId: Int, programId: Int, externalInput: Boolean, outputToScreen: Boolean) {
+        val fbo = fbos.getOrNull(index) ?: return
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, fbo.frameBufferId)
+        GLES20.glViewport(0, 0, surfaceWidth, surfaceHeight)
+        GLES20.glUseProgram(programId)
+        bindCommonAttributes(programId)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        if (externalInput) {
+            GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
+        } else {
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId)
+        }
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(programId, "uTexture"), 0)
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        if (externalInput) {
+            GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, 0)
+        } else {
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
+        }
+        if (outputToScreen) {
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+        }
+    }
+
+    private fun renderShader(shader: FilterShader, inputTextureId: Int, targetFramebufferId: Int, outputToScreen: Boolean) {
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, targetFramebufferId)
+        GLES20.glViewport(0, 0, surfaceWidth, surfaceHeight)
+        GLES20.glUseProgram(shader.programId)
+        bindCommonAttributes(shader.programId)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, inputTextureId)
+        GLES20.glUniform1i(GLES20.glGetUniformLocation(shader.programId, "uTexture"), 0)
+
+        when (shader.type) {
+            ShaderType.COLOR_MATRIX -> {
+                val profile = activeProfile ?: return
+                val matrix = to3x3Matrix(profile.colorMatrix)
+                GLES20.glUniformMatrix3fv(GLES20.glGetUniformLocation(shader.programId, "colorMatrix"), 1, false, matrix, 0)
+                GLES20.glUniform3f(GLES20.glGetUniformLocation(shader.programId, "shadowTint"), 0.02f, 0.02f, 0.02f)
+                GLES20.glUniform3f(GLES20.glGetUniformLocation(shader.programId, "highlightTint"), 0.02f, 0.02f, 0.02f)
+            }
+            ShaderType.VIGNETTE -> {
+                val profile = activeProfile ?: return
+                GLES20.glUniform1f(GLES20.glGetUniformLocation(shader.programId, "intensity"), profile.vignetteStrength.coerceIn(0f, 1f))
+                GLES20.glUniform1f(GLES20.glGetUniformLocation(shader.programId, "feather"), 0.18f)
+            }
+            ShaderType.GRAIN -> {
+                val profile = activeProfile ?: return
+                GLES20.glUniform1f(GLES20.glGetUniformLocation(shader.programId, "intensity"), profile.grainIntensity.coerceIn(0f, 1f))
+                GLES20.glUniform1f(GLES20.glGetUniformLocation(shader.programId, "size"), 1.0f)
+            }
+            ShaderType.SCANLINES -> {
+                GLES20.glUniform1f(GLES20.glGetUniformLocation(shader.programId, "intensity"), 0.16f)
+            }
+            ShaderType.CHROMATIC_ABERRATION -> {
+                val profile = activeProfile ?: return
+                GLES20.glUniform1f(GLES20.glGetUniformLocation(shader.programId, "amount"), profile.chromaticAberration.coerceIn(0f, 0.05f))
+            }
+            ShaderType.CRUSH_BLACKS -> {
+                val profile = activeProfile ?: return
+                GLES20.glUniform1f(GLES20.glGetUniformLocation(shader.programId, "amount"), profile.crushedBlacks.coerceIn(0f, 1f))
+            }
+            ShaderType.SHARPEN -> {
+                GLES20.glUniform1f(GLES20.glGetUniformLocation(shader.programId, "amount"), 0.35f)
+                GLES20.glUniform2f(GLES20.glGetUniformLocation(shader.programId, "texelSize"), 1f / surfaceWidth.toFloat(), 1f / surfaceHeight.toFloat())
+            }
+            ShaderType.SHADOW_NOISE -> {
+                val profile = activeProfile ?: return
+                GLES20.glUniform1f(GLES20.glGetUniformLocation(shader.programId, "amount"), profile.shadowNoiseIntensity.coerceIn(0f, 1f))
+            }
+            ShaderType.DATE_STAMP -> {
+                GLES20.glUniform1f(GLES20.glGetUniformLocation(shader.programId, "amount"), 1.0f)
+            }
+        }
+
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0)
+        if (outputToScreen) {
+            GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+        }
+    }
+
+    private fun bindCommonAttributes(programId: Int) {
+        val positionLocation = GLES20.glGetAttribLocation(programId, "aPosition")
+        val textureLocation = GLES20.glGetAttribLocation(programId, "aTextureCoord")
+
+        GLES20.glEnableVertexAttribArray(positionLocation)
+        GLES20.glVertexAttribPointer(positionLocation, 2, GLES20.GL_FLOAT, false, 0, vertexBuffer)
+
+        GLES20.glEnableVertexAttribArray(textureLocation)
+        GLES20.glVertexAttribPointer(textureLocation, 2, GLES20.GL_FLOAT, false, 0, textureBuffer)
+    }
+
+    private fun rebuildShaderChain() {
+        shaderChain.forEach { GLES20.glDeleteProgram(it.programId) }
+        shaderChain.clear()
+
+        val profile = activeProfile ?: return
+        for (shaderType in profile.shaderPipeline) {
+            shaderChain += FilterShader(
+                type = shaderType,
+                programId = createProgram(QUAD_VERTEX_SHADER, fragmentShaderSourceFor(shaderType)),
+            )
+        }
+    }
+
+    private fun recreateFrameBuffers() {
+        fbos.forEach {
+            GLES20.glDeleteFramebuffers(1, intArrayOf(it.frameBufferId), 0)
+            GLES20.glDeleteTextures(1, intArrayOf(it.textureId), 0)
+        }
+        fbos.clear()
+
+        if (surfaceWidth == 0 || surfaceHeight == 0 || shaderChain.isEmpty()) return
+
+        repeat(shaderChain.size) {
+            fbos += createFrameBuffer(surfaceWidth, surfaceHeight)
+        }
+    }
+
+    private fun createFrameBuffer(width: Int, height: Int): FrameBufferObject {
+        val textureIdArray = IntArray(1)
+        val frameBufferArray = IntArray(1)
+
+        GLES20.glGenTextures(1, textureIdArray, 0)
+        val textureId = textureIdArray[0]
+        GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexParameteri(GLES20.GL_TEXTURE_2D, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+        GLES20.glTexImage2D(
+            GLES20.GL_TEXTURE_2D,
+            0,
+            GLES20.GL_RGBA,
+            width,
+            height,
+            0,
+            GLES20.GL_RGBA,
+            GLES20.GL_UNSIGNED_BYTE,
+            null,
+        )
+
+        GLES20.glGenFramebuffers(1, frameBufferArray, 0)
+        val framebufferId = frameBufferArray[0]
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebufferId)
+        GLES20.glFramebufferTexture2D(
+            GLES20.GL_FRAMEBUFFER,
+            GLES20.GL_COLOR_ATTACHMENT0,
+            GLES20.GL_TEXTURE_2D,
+            textureId,
+            0,
+        )
+        GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
+
+        return FrameBufferObject(framebufferId, textureId, width, height)
+    }
+}
+=== FILE: ./core/camera-engine/src/main/java/com/vintagecam/camera/pipeline/PreviewShaderSources.kt ===
+package com.vintagecam.camera.pipeline
+
+import com.vintagecam.profiles.ShaderType
+
+internal const val QUAD_VERTEX_SHADER = """
+    attribute vec4 aPosition;
+    attribute vec4 aTextureCoord;
+    varying vec2 vTextureCoord;
+    void main() {
+        gl_Position = aPosition;
+        vTextureCoord = aTextureCoord.xy;
+    }
+"""
+
+internal const val CAMERA_COPY_FRAGMENT_SHADER = """
+    #extension GL_OES_EGL_image_external : require
+    precision highp float;
+    varying vec2 vTextureCoord;
+    uniform samplerExternalOES uTexture;
+    uniform mat4 uTexMatrix;
+    void main() {
+        vec2 transformed = (uTexMatrix * vec4(vTextureCoord, 0.0, 1.0)).xy;
+        gl_FragColor = texture2D(uTexture, transformed);
+    }
+"""
+
+internal const val SIMPLE_TEXTURE_FRAGMENT_SHADER = """
+    precision highp float;
+    varying vec2 vTextureCoord;
+    uniform sampler2D uTexture;
+    void main() {
+        gl_FragColor = texture2D(uTexture, vTextureCoord);
+    }
+"""
+
+internal fun fragmentShaderSourceFor(type: ShaderType): String {
+    return when (type) {
+        ShaderType.COLOR_MATRIX -> COLOR_MATRIX_FRAGMENT_SHADER
+        ShaderType.VIGNETTE -> VIGNETTE_FRAGMENT_SHADER
+        ShaderType.GRAIN -> GRAIN_FRAGMENT_SHADER
+        ShaderType.SCANLINES -> SCANLINES_FRAGMENT_SHADER
+        ShaderType.CHROMATIC_ABERRATION -> CHROMATIC_ABERRATION_FRAGMENT_SHADER
+        ShaderType.CRUSH_BLACKS -> CRUSH_BLACKS_FRAGMENT_SHADER
+        ShaderType.SHARPEN -> SHARPEN_FRAGMENT_SHADER
+        ShaderType.SHADOW_NOISE -> SHADOW_NOISE_FRAGMENT_SHADER
+        ShaderType.DATE_STAMP -> DATE_STAMP_FRAGMENT_SHADER
+    }
+}
+
+private const val COLOR_MATRIX_FRAGMENT_SHADER = """
+    precision highp float;
+    varying vec2 vTextureCoord;
+    uniform sampler2D uTexture;
+    uniform mat3 colorMatrix;
+    uniform vec3 shadowTint;
+    uniform vec3 highlightTint;
+    void main() {
+        vec4 color = texture2D(uTexture, vTextureCoord);
+        vec3 rgb = color.rgb;
+        float luma = dot(rgb, vec3(0.299, 0.587, 0.114));
+        vec3 tinted = mix(shadowTint, highlightTint, smoothstep(0.25, 0.85, luma));
+        rgb = colorMatrix * rgb + tinted;
+        gl_FragColor = vec4(rgb, color.a);
+    }
+"""
+
+private const val VIGNETTE_FRAGMENT_SHADER = """
+    precision highp float;
+    varying vec2 vTextureCoord;
+    uniform sampler2D uTexture;
+    uniform float intensity;
+    uniform float feather;
+    void main() {
+        vec4 color = texture2D(uTexture, vTextureCoord);
+        float distanceToCenter = distance(vTextureCoord, vec2(0.5, 0.5));
+        float vignette = 1.0 - intensity * smoothstep(0.5 - feather, 0.5, distanceToCenter);
+        gl_FragColor = vec4(color.rgb * vignette, color.a);
+    }
+"""
+
+private const val GRAIN_FRAGMENT_SHADER = """
+    precision highp float;
+    varying vec2 vTextureCoord;
+    uniform sampler2D uTexture;
+    uniform float intensity;
+    uniform float size;
+    float noise(vec2 st) {
+        return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+    }
+    void main() {
+        vec4 color = texture2D(uTexture, vTextureCoord);
+        float luma = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+        float grain = noise(vTextureCoord * size + vec2(gl_FragCoord.x, gl_FragCoord.y)) - 0.5;
+        color.rgb += grain * intensity * (1.2 - luma);
+        gl_FragColor = color;
+    }
+"""
+
+private const val SCANLINES_FRAGMENT_SHADER = """
+    precision highp float;
+    varying vec2 vTextureCoord;
+    uniform sampler2D uTexture;
+    uniform float intensity;
+    void main() {
+        vec4 color = texture2D(uTexture, vTextureCoord);
+        if (mod(gl_FragCoord.y, 4.0) < 1.0) {
+            color.rgb *= (1.0 - intensity);
+        }
+        gl_FragColor = color;
+    }
+"""
+
+private const val CHROMATIC_ABERRATION_FRAGMENT_SHADER = """
+    precision highp float;
+    varying vec2 vTextureCoord;
+    uniform sampler2D uTexture;
+    uniform float amount;
+    void main() {
+        vec2 center = vec2(0.5, 0.5);
+        vec2 direction = vTextureCoord - center;
+        vec4 red = texture2D(uTexture, vTextureCoord + direction * amount);
+        vec4 green = texture2D(uTexture, vTextureCoord);
+        vec4 blue = texture2D(uTexture, vTextureCoord - direction * amount);
+        gl_FragColor = vec4(red.r, green.g, blue.b, green.a);
+    }
+"""
+
+private const val CRUSH_BLACKS_FRAGMENT_SHADER = """
+    precision highp float;
+    varying vec2 vTextureCoord;
+    uniform sampler2D uTexture;
+    uniform float amount;
+    void main() {
+        vec4 color = texture2D(uTexture, vTextureCoord);
+        color.rgb = pow(color.rgb, vec3(1.0 + amount));
+        gl_FragColor = color;
+    }
+"""
+
+private const val SHARPEN_FRAGMENT_SHADER = """
+    precision highp float;
+    varying vec2 vTextureCoord;
+    uniform sampler2D uTexture;
+    uniform float amount;
+    uniform vec2 texelSize;
+    void main() {
+        vec4 center = texture2D(uTexture, vTextureCoord);
+        vec4 left = texture2D(uTexture, vTextureCoord - vec2(texelSize.x, 0.0));
+        vec4 right = texture2D(uTexture, vTextureCoord + vec2(texelSize.x, 0.0));
+        vec4 up = texture2D(uTexture, vTextureCoord + vec2(0.0, texelSize.y));
+        vec4 down = texture2D(uTexture, vTextureCoord - vec2(0.0, texelSize.y));
+        vec3 sharpened = center.rgb * (1.0 + 4.0 * amount) - (left.rgb + right.rgb + up.rgb + down.rgb) * amount;
+        gl_FragColor = vec4(sharpened, center.a);
+    }
+"""
+
+private const val SHADOW_NOISE_FRAGMENT_SHADER = """
+    precision highp float;
+    varying vec2 vTextureCoord;
+    uniform sampler2D uTexture;
+    uniform float amount;
+    float noise(vec2 st) {
+        return fract(sin(dot(st.xy, vec2(12.9898,78.233))) * 43758.5453123);
+    }
+    void main() {
+        vec4 color = texture2D(uTexture, vTextureCoord);
+        float n = noise(vTextureCoord * 2048.0) - 0.5;
+        color.rgb += vec3(n * amount * 0.08);
+        gl_FragColor = color;
+    }
+"""
+
+private const val DATE_STAMP_FRAGMENT_SHADER = """
+    precision highp float;
+    varying vec2 vTextureCoord;
+    uniform sampler2D uTexture;
+    uniform float amount;
+    void main() {
+        gl_FragColor = texture2D(uTexture, vTextureCoord);
+    }
+"""
+
+=== FILE: ./core/camera-engine/src/main/java/com/vintagecam/camera/pipeline/GlPrimitives.kt ===
+package com.vintagecam.camera.pipeline
+
+import android.opengl.GLES11Ext
+import android.opengl.GLES20
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.FloatBuffer
+
+internal data class FilterShader(
+    val type: com.vintagecam.profiles.ShaderType,
+    val programId: Int,
+)
+
+internal data class FrameBufferObject(
+    val frameBufferId: Int,
+    val textureId: Int,
+    val width: Int,
+    val height: Int,
+)
+
+internal fun createProgram(vertexSource: String, fragmentSource: String): Int {
+    val vertexShader = compileShader(GLES20.GL_VERTEX_SHADER, vertexSource)
+    val fragmentShader = compileShader(GLES20.GL_FRAGMENT_SHADER, fragmentSource)
+    val program = GLES20.glCreateProgram()
+    GLES20.glAttachShader(program, vertexShader)
+    GLES20.glAttachShader(program, fragmentShader)
+    GLES20.glLinkProgram(program)
+    return program
+}
+
+internal fun floatBuffer(vararg values: Float): FloatBuffer {
+    return ByteBuffer.allocateDirect(values.size * 4)
+        .order(ByteOrder.nativeOrder())
+        .asFloatBuffer()
+        .apply {
+            put(values)
+            position(0)
+        }
+}
+
+internal fun createExternalTexture(): Int {
+    val textureIdArray = IntArray(1)
+    GLES20.glGenTextures(1, textureIdArray, 0)
+    val textureId = textureIdArray[0]
+    GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, textureId)
+    GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
+    GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
+    GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_S, GLES20.GL_CLAMP_TO_EDGE)
+    GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_WRAP_T, GLES20.GL_CLAMP_TO_EDGE)
+    return textureId
+}
+
+internal fun to3x3Matrix(colorMatrix: FloatArray): FloatArray {
+    val matrix = FloatArray(9)
+    for (index in 0 until 9) {
+        matrix[index] = colorMatrix.getOrElse(index) { if (index % 4 == 0) 1f else 0f }
+    }
+    return matrix
+}
+
+private fun compileShader(type: Int, source: String): Int {
+    val shader = GLES20.glCreateShader(type)
+    GLES20.glShaderSource(shader, source)
+    GLES20.glCompileShader(shader)
+    return shader
+}
+
+=== FILE: ./core/camera-engine/src/main/java/com/vintagecam/camera/CameraEngine.kt ===
+package com.vintagecam.camera
+
+import android.graphics.Bitmap
+import android.net.Uri
+import androidx.camera.core.Preview
+import androidx.lifecycle.LifecycleOwner
+import com.vintagecam.profiles.CameraProfile
+
+data class CaptureResult(
+    val bitmap: Bitmap,
+    val uri: Uri,
+    val capturedAtMillis: Long,
+)
+
+interface CameraEngine {
+    fun applyProfile(profile: CameraProfile)
+    suspend fun startPreview(lifecycleOwner: LifecycleOwner, surfaceProvider: Preview.SurfaceProvider)
+    fun stopPreview()
+    suspend fun capturePhoto(profile: CameraProfile): CaptureResult
+    fun switchCamera()
+    fun setZoom(scale: Float)
+}
+
+=== FILE: ./core/camera-engine/src/main/java/com/vintagecam/camera/capture/CaptureEvent.kt ===
+package com.vintagecam.camera.capture
+
+import android.graphics.Bitmap
+import android.net.Uri
+
+sealed interface CaptureEvent {
+    data object Processing : CaptureEvent
+
+    data class Success(
+        val bitmap: Bitmap,
+        val uri: Uri,
+        val capturedAtMillis: Long,
+    ) : CaptureEvent
+}
+
+=== FILE: ./core/camera-engine/src/main/java/com/vintagecam/camera/capture/ImageProxyExtensions.kt ===
+package com.vintagecam.camera.capture
+
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageFormat
+import android.graphics.YuvImage
+import androidx.camera.core.ImageProxy
+import java.io.ByteArrayOutputStream
+
+internal fun ImageProxy.toBitmap(): Bitmap {
+    return when (format) {
+        ImageFormat.YUV_420_888 -> yuv420888ToBitmap()
+        ImageFormat.JPEG, 256 -> jpegToBitmap()
+        else -> throw IllegalArgumentException("Unsupported image format: $format")
+    }
+}
+
+private fun ImageProxy.jpegToBitmap(): Bitmap {
+    val buffer = planes[0].buffer
+    val bytes = ByteArray(buffer.capacity())
+    buffer.get(bytes)
+    return BitmapFactory.decodeByteArray(bytes, 0, bytes.size, null)
+        ?: throw IllegalStateException("Failed to decode JPEG bitmap")
+}
+
+private fun ImageProxy.yuv420888ToBitmap(): Bitmap {
+    val nv21 = yuv420888ToNv21()
+    val yuvImage = YuvImage(nv21, ImageFormat.NV21, width, height, null)
+    val output = ByteArrayOutputStream()
+    yuvImage.compressToJpeg(android.graphics.Rect(0, 0, width, height), 95, output)
+    val jpegBytes = output.toByteArray()
+    return BitmapFactory.decodeByteArray(jpegBytes, 0, jpegBytes.size)
+        ?: throw IllegalStateException("Failed to decode bitmap from camera frame")
+}
+
+private fun ImageProxy.yuv420888ToNv21(): ByteArray {
+    val yBuffer = planes[0].buffer
+    val uBuffer = planes[1].buffer
+    val vBuffer = planes[2].buffer
+
+    val ySize = yBuffer.remaining()
+    val uSize = uBuffer.remaining()
+    val vSize = vBuffer.remaining()
+
+    val nv21 = ByteArray(ySize + uSize + vSize)
+    yBuffer.get(nv21, 0, ySize)
+
+    val chromaRowStride = planes[1].rowStride
+    val chromaPixelStride = planes[1].pixelStride
+    val width = this.width
+    val height = this.height
+    var outputPos = ySize
+
+    val vBytes = ByteArray(vSize)
+    val uBytes = ByteArray(uSize)
+    vBuffer.get(vBytes)
+    uBuffer.get(uBytes)
+
+    for (row in 0 until height / 2) {
+        for (col in 0 until width / 2) {
+            val chromaIndex = row * chromaRowStride + col * chromaPixelStride
+            nv21[outputPos++] = vBytes[chromaIndex]
+            nv21[outputPos++] = uBytes[chromaIndex]
+        }
+    }
+
+    return nv21
+}
+
+=== FILE: ./core/camera-engine/src/main/java/com/vintagecam/camera/capture/CapturePostProcessor.kt ===
+package com.vintagecam.camera.capture
+
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.ColorMatrix
+import android.graphics.ColorMatrixColorFilter
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffXfermode
+import android.graphics.RadialGradient
+import android.graphics.Shader
+import android.graphics.Typeface
+import com.vintagecam.profiles.CameraProfile
+import com.vintagecam.profiles.DateStampStyle
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlin.math.hypot
+
+@Singleton
+class CapturePostProcessor @Inject constructor() {
+
+    fun apply(input: Bitmap, profile: CameraProfile, capturedAtMillis: Long): Bitmap {
+        var result = input.copy(Bitmap.Config.ARGB_8888, true)
+
+        // Apply color matrix
+        result = applyColorMatrix(result, profile.colorMatrix)
+
+        // Apply vignette
+        if (profile.vignetteStrength > 0) {
+            result = applyVignette(result, profile.vignetteStrength)
+        }
+
+        // Apply grain (simplified - just noise overlay)
+        if (profile.grainIntensity > 0) {
+            result = applyGrain(result, profile.grainIntensity)
+        }
+
+        // Apply date stamp
+        if (profile.dateStampStyle != DateStampStyle.NONE) {
+            result = applyDateStamp(result, profile.dateStampStyle, capturedAtMillis)
+        }
+
+        return result
+    }
+
+    private fun applyColorMatrix(bitmap: Bitmap, matrix: FloatArray): Bitmap {
+        val resultBitmap = bitmap.copy(bitmap.config, true)
+        val paint = Paint().apply {
+            colorFilter = ColorMatrixColorFilter(ColorMatrix(matrix))
+        }
+        val canvas = Canvas(resultBitmap)
+        canvas.drawBitmap(bitmap, 0f, 0f, paint)
+        return resultBitmap
+    }
+
+    private fun applyVignette(bitmap: Bitmap, strength: Float): Bitmap {
+        val canvas = Canvas(bitmap)
+        val width = bitmap.width.toFloat()
+        val height = bitmap.height.toFloat()
+        val centerX = width / 2
+        val centerY = height / 2
+        val maxRadius = hypot(centerX, centerY)
+
+        val paint = Paint().apply {
+            shader = RadialGradient(
+                centerX, centerY, maxRadius,
+                intArrayOf(Color.TRANSPARENT, Color.BLACK),
+                floatArrayOf(0.7f, 1f),
+                Shader.TileMode.CLAMP
+            )
+            xfermode = PorterDuffXfermode(PorterDuff.Mode.SRC_OVER)
+            alpha = (strength * 255).toInt()
+        }
+
+        canvas.drawRect(0f, 0f, width, height, paint)
+        return bitmap
+    }
+
+    private fun applyGrain(bitmap: Bitmap, intensity: Float): Bitmap {
+        val pixels = IntArray(bitmap.width * bitmap.height)
+        bitmap.getPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+
+        val random = java.util.Random()
+        for (i in pixels.indices) {
+            val noise = (random.nextFloat() - 0.5f) * intensity * 255
+            val pixel = pixels[i]
+            val r = (Color.red(pixel) + noise).toInt().coerceIn(0, 255)
+            val g = (Color.green(pixel) + noise).toInt().coerceIn(0, 255)
+            val b = (Color.blue(pixel) + noise).toInt().coerceIn(0, 255)
+            pixels[i] = Color.rgb(r, g, b)
+        }
+
+        bitmap.setPixels(pixels, 0, bitmap.width, 0, 0, bitmap.width, bitmap.height)
+        return bitmap
+    }
+
+    private fun applyDateStamp(bitmap: Bitmap, style: DateStampStyle, timestamp: Long): Bitmap {
+        val canvas = Canvas(bitmap)
+        val paint = Paint().apply {
+            textSize = bitmap.height * 0.03f
+            typeface = Typeface.MONOSPACE
+            when (style) {
+                DateStampStyle.YELLOW_CLASSIC -> {
+                    color = Color.YELLOW
+                    setShadowLayer(2f, 1f, 1f, Color.BLACK)
+                }
+                DateStampStyle.RED_LED -> {
+                    color = Color.RED
+                }
+                DateStampStyle.WHITE_LCD -> {
+                    color = Color.WHITE
+                    setShadowLayer(1f, 0f, 0f, Color.BLACK)
+                }
+                else -> color = Color.WHITE
+            }
+        }
+
+        val dateText = SimpleDateFormat("yyyy.MM.dd", Locale.US)
+            .format(Date(timestamp))
+        canvas.drawText(dateText, bitmap.width * 0.05f, bitmap.height * 0.95f, paint)
+
+        return bitmap
+    }
+}
+
+=== FILE: ./core/camera-engine/src/main/java/com/vintagecam/camera/capture/GallerySaver.kt ===
+package com.vintagecam.camera.capture
+
+import android.content.ContentValues
+import android.content.Context
+import android.graphics.Bitmap
+import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import androidx.exifinterface.media.ExifInterface
+import com.vintagecam.profiles.CameraProfile
+import java.io.IOException
+
+internal class GallerySaver(
+    private val context: Context,
+) {
+    fun save(bitmap: Bitmap, profile: CameraProfile, capturedAtMillis: Long): Uri {
+        val resolver = context.contentResolver
+        val fileName = "VintageCam_${profile.id}_$capturedAtMillis.jpg"
+        val values = ContentValues().apply {
+            put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
+            put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+            put(MediaStore.Images.Media.DATE_TAKEN, capturedAtMillis)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                put(
+                    MediaStore.Images.Media.RELATIVE_PATH,
+                    Environment.DIRECTORY_PICTURES + "/VintageCam",
+                )
+                put(MediaStore.Images.Media.IS_PENDING, 1)
+            }
+        }
+
+        val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
+        } else {
+            MediaStore.Images.Media.EXTERNAL_CONTENT_URI
+        }
+
+        val uri = resolver.insert(collection, values)
+            ?: throw IOException("Unable to insert image into MediaStore")
+
+        try {
+            resolver.openOutputStream(uri)?.use { output ->
+                if (!bitmap.compress(Bitmap.CompressFormat.JPEG, 95, output)) {
+                    throw IOException("Failed to write JPEG to MediaStore")
+                }
+            } ?: throw IOException("Unable to open output stream for MediaStore URI")
+
+            resolver.openFileDescriptor(uri, "rw")?.use { descriptor ->
+                ExifInterface(descriptor.fileDescriptor).apply {
+                    setAttribute(ExifInterface.TAG_DATETIME_ORIGINAL, exifTimestamp(capturedAtMillis))
+                    setAttribute(ExifInterface.TAG_DATETIME, exifTimestamp(capturedAtMillis))
+                    setAttribute(ExifInterface.TAG_MAKE, "VintageCam")
+                    setAttribute(ExifInterface.TAG_MODEL, profile.displayName)
+                    setAttribute(ExifInterface.TAG_IMAGE_DESCRIPTION, profile.id)
+                    saveAttributes()
+                }
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                values.clear()
+                values.put(MediaStore.Images.Media.IS_PENDING, 0)
+                resolver.update(uri, values, null, null)
+            }
+        } catch (e: Exception) {
+            resolver.delete(uri, null, null)
+            throw e
+        }
+
+        android.util.Log.d("GallerySaver", "Saved to: $uri")
+
+        return uri
+    }
+
+    private fun exifTimestamp(capturedAtMillis: Long): String {
+        return java.text.SimpleDateFormat("yyyy:MM:dd HH:mm:ss", java.util.Locale.US)
+            .format(java.util.Date(capturedAtMillis))
+    }
+}
+
+=== FILE: ./core/camera-engine/src/main/java/com/vintagecam/camera/CameraXEngineImpl.kt ===
+package com.vintagecam.camera
+
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.ImageFormat
+import android.graphics.Rect
+import android.graphics.YuvImage
+import android.net.Uri
+import androidx.camera.core.CameraSelector
+import androidx.camera.core.ImageCapture
+import androidx.camera.core.ImageCaptureException
+import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
+import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.core.content.ContextCompat
+import androidx.lifecycle.LifecycleOwner
+import com.vintagecam.camera.capture.CapturePostProcessor
+import com.vintagecam.camera.capture.GallerySaver
+import com.vintagecam.profiles.CameraProfile
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
+import com.google.common.util.concurrent.ListenableFuture
+import java.io.ByteArrayOutputStream
+import javax.inject.Inject
+import javax.inject.Singleton
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
+@Singleton
+class CameraXEngineImpl @Inject constructor(
+    @ApplicationContext private val context: Context
+) : CameraEngine {
+
+    private var cameraProvider: ProcessCameraProvider? = null
+    private var imageCapture: ImageCapture? = null
+    private var preview: Preview? = null
+    private var currentCameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+    private var currentProfile: CameraProfile? = null
+    private var boundLifecycleOwner: LifecycleOwner? = null
+    private var boundSurfaceProvider: Preview.SurfaceProvider? = null
+
+    override fun applyProfile(profile: CameraProfile) {
+        currentProfile = profile
+    }
+
+    
+    
+    override suspend fun startPreview(
+        lifecycleOwner: LifecycleOwner,
+        surfaceProvider: Preview.SurfaceProvider
+    ) {
+        boundLifecycleOwner = lifecycleOwner
+        boundSurfaceProvider = surfaceProvider
+
+        // Acquire provider and bind on the main dispatcher. Use ListenableFuture.await() helper.
+        withContext(Dispatchers.Main) {
+            val provider = ProcessCameraProvider.getInstance(context).await()
+            cameraProvider = provider
+            bindInternal(lifecycleOwner, surfaceProvider)
+        }
+    }
+    override fun stopPreview() {
+        try {
+            cameraProvider?.unbindAll()
+        } catch (e: Exception) {
+            android.util.Log.e("CameraXEngine", "Failed to stop preview", e)
+        }
+    }
+
+    
+    
+    override suspend fun capturePhoto(profile: CameraProfile): com.vintagecam.camera.CaptureResult {
+        val capture = imageCapture ?: throw IllegalStateException("Camera not started")
+
+        // Capture ImageProxy on main thread
+        val imageProxy = withContext(kotlinx.coroutines.Dispatchers.Main) {
+            suspendCancellableCoroutine<ImageProxy> { cont ->
+                try {
+                    capture.takePicture(
+                        ContextCompat.getMainExecutor(context),
+                        object : ImageCapture.OnImageCapturedCallback() {
+                            override fun onCaptureSuccess(image: ImageProxy) {
+                                cont.resume(image) {}
+                            }
+
+                            override fun onError(exception: ImageCaptureException) {
+                                cont.resumeWithException(exception)
+                            }
+                        }
+                    )
+                } catch (e: Exception) {
+                    cont.resumeWithException(e)
+                }
+            }
+        }
+
+        val timestamp = System.currentTimeMillis()
+
+        // ✅ Safe close with .use() (ImageProxy implements AutoCloseable)
+        val bitmap = imageProxy.use { proxy ->
+            proxy.toBitmap()
+        }
+
+        // Apply CPU post-processing off the main thread
+        val postProcessor = CapturePostProcessor()
+        val processed = withContext(kotlinx.coroutines.Dispatchers.Default) {
+            postProcessor.apply(bitmap, profile, timestamp)
+        }
+
+        // Save to gallery on IO dispatcher
+        val gallerySaver = GallerySaver(context)
+        val uri = try {
+            withContext(kotlinx.coroutines.Dispatchers.IO) {
+                gallerySaver.save(processed, profile, timestamp)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("CameraXEngine", "Failed to save to gallery", e)
+            Uri.EMPTY
+        }
+
+        return com.vintagecam.camera.CaptureResult(processed, uri, timestamp)
+    }
+    override fun switchCamera() {
+        currentCameraSelector = if (currentCameraSelector == CameraSelector.DEFAULT_BACK_CAMERA) {
+            CameraSelector.DEFAULT_FRONT_CAMERA
+        } else {
+            CameraSelector.DEFAULT_BACK_CAMERA
+        }
+
+        val lifecycleOwner = boundLifecycleOwner ?: return
+        val surfaceProvider = boundSurfaceProvider ?: return
+        val provider = cameraProvider ?: return
+
+        ContextCompat.getMainExecutor(context).execute {
+            try {
+                provider.unbindAll()
+                bindInternal(lifecycleOwner, surfaceProvider)
+            } catch (e: Exception) {
+                android.util.Log.e("CameraXEngine", "Switch failed", e)
+            }
+        }
+    }
+
+    override fun setZoom(scale: Float) {}
+
+    private fun bindInternal(
+        lifecycleOwner: LifecycleOwner,
+        surfaceProvider: Preview.SurfaceProvider,
+    ) {
+        val provider = cameraProvider ?: throw IllegalStateException("Camera provider unavailable")
+
+        preview = Preview.Builder()
+            .build()
+            .also { it.setSurfaceProvider(surfaceProvider) }
+
+        imageCapture = ImageCapture.Builder()
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+            .build()
+
+        provider.bindToLifecycle(
+            lifecycleOwner,
+            currentCameraSelector,
+            preview,
+            imageCapture,
+        )
+    }
+
+    // Await extension for ListenableFuture tied to this instance's context
+    private suspend fun <T> ListenableFuture<T>.await(): T = suspendCancellableCoroutine { cont ->
+        try {
+            addListener({
+                try {
+                    cont.resume(get()) {}
+                } catch (e: Exception) {
+                    cont.resumeWithException(e)
+                }
+            }, ContextCompat.getMainExecutor(context))
+        } catch (e: Exception) {
+            cont.resumeWithException(e)
+        }
+    }
+
+    private fun ImageProxy.toBitmap(): Bitmap {
+        val yBuffer = planes[0].buffer
+        val uBuffer = planes[1].buffer
+        val vBuffer = planes[2].buffer
+        val ySize = yBuffer.remaining()
+        val uSize = uBuffer.remaining()
+        val vSize = vBuffer.remaining()
+        val nv21 = ByteArray(ySize + uSize + vSize)
+        yBuffer.get(nv21, 0, ySize)
+        vBuffer.get(nv21, ySize, vSize)
+        uBuffer.get(nv21, ySize + vSize, uSize)
+        val yuvImage = YuvImage(nv21, ImageFormat.NV21, width, height, null)
+        val out = ByteArrayOutputStream()
+        yuvImage.compressToJpeg(Rect(0, 0, width, height), 100, out)
+        return BitmapFactory.decodeByteArray(out.toByteArray(), 0, out.size())
+    }
+}
+
+=== FILE: ./core/profiles/src/main/java/com/vintagecam/profiles/data/ProfileRepository.kt ===
+package com.vintagecam.profiles.data
+
+import com.vintagecam.profiles.AspectRatio
+import com.vintagecam.profiles.CameraProfile
+import com.vintagecam.profiles.DateStampStyle
+import com.vintagecam.profiles.Era
+import com.vintagecam.profiles.FlashBehavior
+import com.vintagecam.profiles.ShaderType
+import com.vintagecam.profiles.ViewfinderType
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class ProfileRepository @Inject constructor() {
+
+    private val profiles = listOf(
+        CameraProfile(
+            id = "vhs_1985",
+            displayName = "VHS-C 1985",
+            era = Era.EIGHTIES,
+            colorMatrix = floatArrayOf(
+                1.05f, -0.02f, -0.08f,
+                -0.05f, 1.10f, -0.05f,
+                0.02f, -0.10f, 1.08f
+            ),
+            vignetteStrength = 0.25f,
+            grainIntensity = 0.12f,
+            aspectRatio = AspectRatio.RATIO_4_3,
+            viewfinderType = ViewfinderType.CRT,
+            captureLatencyMs = 150L,
+            shaderPipeline = listOf(ShaderType.COLOR_MATRIX, ShaderType.VIGNETTE, ShaderType.GRAIN),
+            chromaticAberration = 0.015f,
+            interlacedPreview = true
+        ),
+        CameraProfile(
+            id = "disposable_1998",
+            displayName = "FunSaver '98",
+            era = Era.NINETIES,
+            colorMatrix = floatArrayOf(
+                1.10f, -0.05f, -0.10f,
+                -0.10f, 1.20f, -0.10f,
+                -0.05f, -0.15f, 1.20f
+            ),
+            vignetteStrength = 0.45f,
+            grainIntensity = 0.25f,
+            aspectRatio = AspectRatio.RATIO_3_2,
+            viewfinderType = ViewfinderType.OPTICAL,
+            captureLatencyMs = 80L,
+            shaderPipeline = listOf(ShaderType.COLOR_MATRIX, ShaderType.VIGNETTE, ShaderType.GRAIN),
+            dateStampStyle = DateStampStyle.YELLOW_CLASSIC,
+            crushedBlacks = 0.05f
+        ),
+        CameraProfile(
+            id = "digicam_2003",
+            displayName = "CyberShot 2003",
+            era = Era.TWO_THOUSANDS,
+            colorMatrix = floatArrayOf(
+                1.20f, -0.10f, -0.10f,
+                -0.15f, 1.30f, -0.15f,
+                -0.05f, -0.10f, 1.15f
+            ),
+            vignetteStrength = 0.10f,
+            grainIntensity = 0.08f,
+            aspectRatio = AspectRatio.RATIO_4_3,
+            viewfinderType = ViewfinderType.LCD,
+            captureLatencyMs = 400L,
+            shaderPipeline = listOf(ShaderType.COLOR_MATRIX, ShaderType.SHARPEN, ShaderType.GRAIN),
+            dateStampStyle = DateStampStyle.WHITE_LCD,
+            flashBehavior = FlashBehavior.RED_EYE
+        )
+    )
+    
+    fun getProfiles(): List<CameraProfile> = profiles
+    fun getProfileById(id: String): CameraProfile? = profiles.find { it.id == id }
+    fun getDefaultProfile(): CameraProfile = profiles.first()
+}
+
+=== FILE: ./core/profiles/src/main/java/com/vintagecam/profiles/data/CapturedPhoto.kt ===
+package com.vintagecam.profiles.data
+
+import android.graphics.Bitmap
+import android.net.Uri
+import com.vintagecam.profiles.CameraProfile
+
+data class CapturedPhoto(
+    val bitmap: Bitmap,
+    val profile: CameraProfile,
+    val timestampMillis: Long,
+    val uri: Uri,
+)
+
+=== FILE: ./core/profiles/src/main/java/com/vintagecam/profiles/data/SessionManager.kt ===
+package com.vintagecam.profiles.data
+
+import javax.inject.Inject
+import javax.inject.Singleton
+
+@Singleton
+class SessionManager @Inject constructor() {
+    private val currentRollPhotos = mutableListOf<CapturedPhoto>()
+
+    @Synchronized
+    fun addCapturedPhoto(photo: CapturedPhoto) {
+        currentRollPhotos += photo
+    }
+
+    @Synchronized
+    fun getCurrentRollPhotos(): List<CapturedPhoto> = currentRollPhotos.toList()
+
+    @Synchronized
+    fun clearCurrentRoll() {
+        currentRollPhotos.clear()
+    }
+}
+
+=== FILE: ./core/profiles/src/main/java/com/vintagecam/profiles/CameraProfile.kt ===
+package com.vintagecam.profiles
+
+import android.os.Parcelable
+import kotlinx.parcelize.Parcelize
+
+@Parcelize
+data class CameraProfile(
+	val id: String,
+	val displayName: String,
+	val era: Era,
+	val colorMatrix: FloatArray,
+	val vignetteStrength: Float,
+	val grainIntensity: Float,
+	val aspectRatio: AspectRatio,
+	val viewfinderType: ViewfinderType,
+	val captureLatencyMs: Long,
+	val shaderPipeline: List<ShaderType>,
+	val chromaticAberration: Float = 0f,
+	val flashBehavior: FlashBehavior = FlashBehavior.OFF,
+	val dateStampStyle: DateStampStyle = DateStampStyle.NONE,
+	val crushedBlacks: Float = 0f,
+	val shadowNoiseIntensity: Float = 0f,
+	val interlacedPreview: Boolean = false,
+) : Parcelable
+
+enum class Era {
+	EIGHTIES,
+	NINETIES,
+	TWO_THOUSANDS,
+}
+
+enum class AspectRatio(val width: Int, val height: Int) {
+	RATIO_4_3(4, 3),
+	RATIO_3_2(3, 2),
+	RATIO_1_1(1, 1),
+	RATIO_16_9(16, 9),
+}
+
+enum class ViewfinderType {
+	CRT,
+	OPTICAL,
+	LCD,
+}
+
+enum class FlashBehavior {
+	OFF,
+	AUTO,
+	ON,
+	RED_EYE,
+}
+
+enum class DateStampStyle {
+	NONE,
+	YELLOW_CLASSIC,
+	RED_LED,
+	WHITE_LCD,
+}
+
+enum class ShaderType {
+	COLOR_MATRIX,
+	VIGNETTE,
+	GRAIN,
+	SCANLINES,
+	CHROMATIC_ABERRATION,
+	CRUSH_BLACKS,
+	SHARPEN,
+	SHADOW_NOISE,
+	DATE_STAMP,
+}
+
+=== BUILD FILES ===
+plugins {
+    alias(libs.plugins.android.application) apply false
+    alias(libs.plugins.android.library) apply false
+    alias(libs.plugins.kotlin.android) apply false
+    alias(libs.plugins.kotlin.kapt) apply false
+    alias(libs.plugins.hilt) apply false
+    alias(libs.plugins.kotlin.compose) apply false
+}
+plugins {
+    alias(libs.plugins.android.application)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.kotlin.kapt)
+}
+android {
+    namespace = "com.vintagecam.app"
+    compileSdk = 34
+    defaultConfig {
+        applicationId = "com.vintagecam.app"
+        minSdk = 26
+        targetSdk = 34
+        versionCode = 1
+        versionName = "1.0.0-alpha"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        vectorDrawables { useSupportLibrary = true }
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = true
+            isShrinkResources = true
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+        debug {
+            isDebuggable = true
+            applicationIdSuffix = ".debug"
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+    buildFeatures { compose = true; buildConfig = true }
+    composeOptions { kotlinCompilerExtensionVersion = "1.5.15" }
+    packaging { resources { excludes += "/META-INF/{AL2.0,LGPL2.1}" } }
+}
+dependencies {
+    implementation(project(":core:camera-engine"))
+    implementation(project(":core:profiles"))
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
+    implementation(libs.androidx.activity.compose)
+    implementation(platform(libs.androidx.compose.bom))
+    implementation(libs.androidx.ui)
+    implementation(libs.androidx.ui.graphics)
+    implementation(libs.androidx.ui.tooling.preview)
+    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.material3)
+    implementation(libs.androidx.navigation.compose)
+    implementation(libs.camera.core)
+    implementation(libs.camera.camera2)
+    implementation(libs.camera.lifecycle)
+    implementation(libs.camera.view)
+    implementation(libs.camera.extensions)
+    implementation(libs.hilt.android)
+    kapt(libs.hilt.compiler)
+    implementation(libs.hilt.navigation.compose)
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.accompanist.permissions)
+    debugImplementation(libs.androidx.ui.tooling)
+    debugImplementation(libs.androidx.ui.test.manifest)
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(libs.hilt.android.testing)
+    kaptAndroidTest(libs.hilt.compiler)
+}
+plugins {
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.kotlin.kapt)
+}
+android {
+    namespace = "com.vintagecam.camera"
+    compileSdk = 34
+    defaultConfig {
+        minSdk = 26
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles("consumer-rules.pro")
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+    buildFeatures { buildConfig = true }
+}
+dependencies {
+    implementation(project(":core:profiles"))
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.androidx.exifinterface)
+    api(libs.camera.core)
+    api(libs.camera.camera2)
+    api(libs.camera.lifecycle)
+    api(libs.camera.view)
+    implementation(libs.hilt.android)
+    kapt(libs.hilt.compiler)
+    implementation(libs.kotlinx.coroutines.android)
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+}
+plugins {
+    alias(libs.plugins.android.library)
+    alias(libs.plugins.kotlin.android)
+    id("kotlin-parcelize")
+    alias(libs.plugins.hilt)
+    alias(libs.plugins.kotlin.kapt)
+}
+android {
+    namespace = "com.vintagecam.profiles"
+    compileSdk = 34
+    defaultConfig {
+        minSdk = 26
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        consumerProguardFiles("consumer-rules.pro")
+    }
+    buildTypes {
+        release {
+            isMinifyEnabled = false
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
+    }
+    compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_17
+        targetCompatibility = JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = "17" }
+}
+dependencies {
+    implementation(libs.androidx.core.ktx)
+    implementation(libs.hilt.android)
+    kapt(libs.hilt.compiler)
+    testImplementation(libs.junit)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+}
+[versions]
+agp = "8.5.0"
+kotlin = "2.0.0"
+coreKtx = "1.13.1"
+junit = "4.13.2"
+junitVersion = "1.2.1"
+espressoCore = "3.6.1"
+lifecycleRuntimeKtx = "2.8.3"
+activityCompose = "1.9.0"
+composeBom = "2024.06.00"
+camerax = "1.3.4"
+hilt = "2.51.1"
+coroutines = "1.8.1"
+navigation = "2.7.7"
+accompanist = "0.34.0"
+room = "2.6.1"
+coil = "2.6.0"
+datastore = "1.1.1"
+exifinterface = "1.3.7"
+
+[libraries]
+androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
+junit = { group = "junit", name = "junit", version.ref = "junit" }
+androidx-junit = { group = "androidx.test.ext", name = "junit", version.ref = "junitVersion" }
+androidx-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espressoCore" }
+androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycleRuntimeKtx" }
+androidx-lifecycle-viewmodel-compose = { group = "androidx.lifecycle", name = "lifecycle-viewmodel-compose", version.ref = "lifecycleRuntimeKtx" }
+androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
+androidx-compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
+androidx-ui = { group = "androidx.compose.ui", name = "ui" }
+androidx-ui-graphics = { group = "androidx.compose.ui", name = "ui-graphics" }
+androidx-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling" }
+androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview" }
+androidx-ui-test-manifest = { group = "androidx.compose.ui", name = "ui-test-manifest" }
+androidx-ui-test-junit4 = { group = "androidx.compose.ui", name = "ui-test-junit4" }
+androidx-compose-material-icons-extended = { group = "androidx.compose.material", name = "material-icons-extended" }
+androidx-material3 = { group = "androidx.compose.material3", name = "material3" }
+androidx-navigation-compose = { group = "androidx.navigation", name = "navigation-compose", version.ref = "navigation" }
+androidx-exifinterface = { group = "androidx.exifinterface", name = "exifinterface", version.ref = "exifinterface" }
+
+camera-core = { group = "androidx.camera", name = "camera-core", version.ref = "camerax" }
+camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "camerax" }
+camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "camerax" }
+camera-video = { group = "androidx.camera", name = "camera-video", version.ref = "camerax" }
+camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "camerax" }
+camera-extensions = { group = "androidx.camera", name = "camera-extensions", version.ref = "camerax" }
+
+hilt-android = { group = "com.google.dagger", name = "hilt-android", version.ref = "hilt" }
+hilt-compiler = { group = "com.google.dagger", name = "hilt-compiler", version.ref = "hilt" }
+hilt-android-testing = { group = "com.google.dagger", name = "hilt-android-testing", version.ref = "hilt" }
+hilt-navigation-compose = { group = "androidx.hilt", name = "hilt-navigation-compose", version = "1.2.0" }
+
+kotlinx-coroutines-android = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-android", version.ref = "coroutines" }
+kotlinx-coroutines-play-services = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-play-services", version.ref = "coroutines" }
+
+accompanist-permissions = { group = "com.google.accompanist", name = "accompanist-permissions", version.ref = "accompanist" }
+
+room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
+room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }
+room-compiler = { group = "androidx.room", name = "room-compiler", version.ref = "room" }
+
+datastore-preferences = { group = "androidx.datastore", name = "datastore-preferences", version.ref = "datastore" }
+
+coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
+coil-gif = { group = "io.coil-kt", name = "coil-gif", version.ref = "coil" }
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+android-library = { id = "com.android.library", version.ref = "agp" }
+kotlin-android = { id = "org.jetbrains.kotlin.android", version.ref = "kotlin" }
+kotlin-kapt = { id = "org.jetbrains.kotlin.kapt", version.ref = "kotlin" }
+hilt = { id = "com.google.dagger.hilt.android", version.ref = "hilt" }
+kotlin-compose = { id = "org.jetbrains.kotlin.plugin.compose", version.ref = "kotlin" }

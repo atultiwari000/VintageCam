@@ -31,7 +31,12 @@ class SoundPoolEngine @Inject constructor() : CameraSoundEngine {
     }
 
     override fun playShutter(profile: CameraProfile) {
-        loadedSounds[profile.id]?.let { soundPool.play(it, 1f, 1f, 0, 0, 1f) }
+        val soundId = loadedSounds[profile.id]
+        if (soundId != null && soundId != 0) {
+            soundPool.play(soundId, 1f, 1f, 0, 0, 1f)
+        } else {
+            android.util.Log.w("SoundPoolEngine", "Sound not loaded for ${profile.id}")
+        }
     }
 
     override fun release() {

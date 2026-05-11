@@ -48,9 +48,25 @@ class CapturePostProcessor @Inject constructor() {
     }
 
     private fun applyColorMatrix(bitmap: Bitmap, matrix: FloatArray): Bitmap {
+        // ProfileRepository stores 9-element (3x3) RGB matrices.
+        // ColorMatrix(float[]) requires a 20-element (4x5) array:
+        //   [Rr, Rg, Rb, 0, 0,    // R' = Rr*R + Rg*G + Rb*B
+        //    Gr, Gg, Gb, 0, 0,    // G' = Gr*R + Gg*G + Gb*B
+        //    Br, Bg, Bb, 0, 0,    // B' = Br*R + Bg*G + Bb*B
+        //    0,  0,  0,  1, 0]    // A' = A (unchanged)
+        val fullMatrix = if (matrix.size == 9) {
+            floatArrayOf(
+                matrix[0], matrix[1], matrix[2], 0f, 0f,
+                matrix[3], matrix[4], matrix[5], 0f, 0f,
+                matrix[6], matrix[7], matrix[8], 0f, 0f,
+                0f, 0f, 0f, 1f, 0f,
+            )
+        } else {
+            matrix
+        }
         val resultBitmap = bitmap.copy(bitmap.config, true)
         val paint = Paint().apply {
-            colorFilter = ColorMatrixColorFilter(ColorMatrix(matrix))
+            colorFilter = ColorMatrixColorFilter(ColorMatrix(fullMatrix))
         }
         val canvas = Canvas(resultBitmap)
         canvas.drawBitmap(bitmap, 0f, 0f, paint)

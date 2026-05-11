@@ -1,18 +1,21 @@
 package com.vintagecam.app.ui.viewfinder
 
+import android.content.Context
 import androidx.camera.core.Preview
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import dagger.hilt.android.qualifiers.ApplicationContext
 import com.vintagecam.app.audio.CameraSoundEngine
 import com.vintagecam.camera.CameraEngine
-import com.vintagecam.camera.capture.CaptureEvent
+import com.vintagecam.camera.CaptureResult
 import com.vintagecam.profiles.CameraProfile
 import com.vintagecam.profiles.data.CapturedPhoto
 import com.vintagecam.profiles.data.ProfileRepository
 import com.vintagecam.profiles.data.SessionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -35,6 +38,7 @@ data class ViewfinderUiState(
 
 @HiltViewModel
 class ViewfinderViewModel @Inject constructor(
+    @ApplicationContext private val appContext: Context,
     private val cameraEngine: CameraEngine,
     private val cameraSoundEngine: CameraSoundEngine,
     private val sessionManager: SessionManager,
@@ -53,12 +57,20 @@ class ViewfinderViewModel @Inject constructor(
     val uiState: StateFlow<ViewfinderUiState> = _uiState.asStateFlow()
 
     init {
-        // Safe: only sets state, no camera access
-        // Camera engine initialization happens during preview start in ViewfinderScreen
+        // Preload shutter sounds once at startup
+        viewModelScope.launch {
+            cameraSoundEngine.preload(appContext, profiles)
+        }
     }
 
-    fun onStartPreview(lifecycleOwner: LifecycleOwner, surfaceProvider: Preview.SurfaceProvider) {
-        cameraEngine.startPreview(lifecycleOwner, surfaceProvider)
+    fun bindCamera(lifecycleOwner: LifecycleOwner, previewView: androidx.camera.view.PreviewView) {
+        viewModelScope.launch {
+            try {
+                cameraEngine.startPreview(lifecycleOwner, previewView.surfaceProvider)
+            } catch (e: Exception) {
+                android.util.Log.e("ViewfinderViewModel", "Failed to bind camera", e)
+            }
+        }
     }
 
     fun onProfileSelected(index: Int) {
@@ -80,35 +92,53 @@ class ViewfinderViewModel @Inject constructor(
     }
 
     fun onCapture() {
+        // Guard: only allow capture when previewing
+        if (_uiState.value.cameraState != CameraState.Previewing) return
+
         viewModelScope.launch {
             val profile = profiles.getOrNull(_uiState.value.currentProfileIndex) ?: return@launch
 
             try {
+                // --- Capture sequence ---
                 _uiState.update { it.copy(cameraState = CameraState.Capturing) }
-                cameraEngine.capturePhoto(profile).collect { event ->
-                    when (event) {
-                        CaptureEvent.Processing -> {
-                            cameraSoundEngine.playShutter(profile)
-                            _uiState.update { it.copy(cameraState = CameraState.Processing) }
-                        }
-                        is CaptureEvent.Success -> {
-                            val capturedPhoto = CapturedPhoto(
-                                bitmap = event.bitmap,
-                                profile = profile,
-                                timestampMillis = event.capturedAtMillis,
-                                uri = event.uri,
-                            )
-                            sessionManager.addCapturedPhoto(capturedPhoto)
-                            _uiState.update { state ->
-                                state.copy(
-                                    cameraState = CameraState.Previewing,
-                                    capturedPhotos = state.capturedPhotos + capturedPhoto,
-                                )
-                            }
-                        }
-                    }
+
+                // Haptic handled by UI; play shutter
+                cameraSoundEngine.playShutter(profile)
+
+                // Simulate vintage shutter delay
+                delay(profile.captureLatencyMs)
+
+                _uiState.update { it.copy(cameraState = CameraState.Processing) }
+
+                // Suspend until the camera pipeline produces a result
+                val result: CaptureResult = cameraEngine.capturePhoto(profile)
+
+                val capturedPhoto = CapturedPhoto(
+                    bitmap = result.bitmap,
+                    profile = profile,
+                    timestampMillis = result.capturedAtMillis,
+                    uri = result.uri,
+                )
+
+                // Persist to SessionManager and update UI state atomically
+                sessionManager.addCapturedPhoto(capturedPhoto)
+
+                _uiState.update { state ->
+                    state.copy(
+                        cameraState = CameraState.Previewing,
+                        capturedPhotos = state.capturedPhotos + capturedPhoto,
+                    )
                 }
-            } finally {
+
+                android.util.Log.d(
+                    "ViewfinderViewModel",
+                    "Capture complete: profile=${profile.id} uri=${result.uri}",
+                )
+            } catch (e: Throwable) {
+                // Catch Throwable (not just Exception) so that OOM, linkage errors,
+                // or any other JVM Error still restore Previewing state instead of
+                // leaving the UI stuck in Capturing/Processing.
+                android.util.Log.e("ViewfinderViewModel", "Capture failed", e)
                 _uiState.update { it.copy(cameraState = CameraState.Previewing) }
             }
         }

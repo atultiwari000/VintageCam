@@ -13,6 +13,7 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -83,6 +84,7 @@ import com.vintagecam.profiles.CameraProfile
 import com.vintagecam.profiles.Era
 import com.vintagecam.profiles.ViewfinderType
 import com.vintagecam.camera.pipeline.PreviewFilterRenderer
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalPermissionsApi::class)
@@ -112,8 +114,8 @@ fun ViewfinderScreen(
                 onProfilePageChanged = viewModel::onProfileSelected,
                 onGalleryClick = onOpenFilmRoll,
                 onOpenFilmRoll = onOpenFilmRoll,
-                onStartPreview = { surfaceProvider ->
-                    viewModel.onStartPreview(lifecycleOwner, surfaceProvider)
+                onBindPreview = { owner, previewView ->
+                    viewModel.bindCamera(owner, previewView)
                 },
             )
         }
@@ -146,7 +148,7 @@ private fun ViewfinderContent(
     onProfilePageChanged: (Int) -> Unit,
     onGalleryClick: () -> Unit,
     onOpenFilmRoll: () -> Unit,
-    onStartPreview: (Preview.SurfaceProvider) -> Unit,
+    onBindPreview: (androidx.lifecycle.LifecycleOwner, androidx.camera.view.PreviewView) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -155,6 +157,7 @@ private fun ViewfinderContent(
         pageCount = { uiState.profiles.size.coerceAtLeast(1) },
     )
     val currentProfile = uiState.profiles.getOrNull(uiState.currentProfileIndex)
+    val lifecycleOwner = LocalLifecycleOwner.current
 
     LaunchedEffect(pagerState.currentPage) {
         if (uiState.profiles.isNotEmpty()) {
@@ -175,12 +178,16 @@ private fun ViewfinderContent(
             modifier = Modifier.fillMaxSize(),
             userScrollEnabled = uiState.profiles.isNotEmpty(),
         ) { _ ->
-            CameraPreview(
-                context = context,
-                modifier = Modifier.fillMaxSize(),
-                profile = currentProfile,
-                onStartPreview = onStartPreview,
-            )
+                    CameraPreview(
+                        context = context,
+                        modifier = Modifier.fillMaxSize(),
+                        profile = currentProfile,
+                        lifecycleOwner = lifecycleOwner,
+                        onBindPreview = { owner, previewView ->
+                            // Start preview once when the PreviewView is created
+                            onBindPreview(owner, previewView)
+                        }
+                    )
         }
 
         // Chrome overlay (draws on top of full-screen preview)
@@ -201,20 +208,22 @@ private fun ViewfinderContent(
                 .padding(horizontal = 16.dp, vertical = 24.dp),
         )
 
-        // Capture button area at bottom
-        CaptureArea(
-            profile = currentProfile,
-            cameraState = uiState.cameraState,
-            onCapture = {
-                scope.launch { onCapture() }
-            },
-            onOpenFilmRoll = onOpenFilmRoll,
+        // Capture area stays fixed at bottom center across state changes.
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
                 .align(Alignment.BottomCenter)
                 .windowInsetsPadding(WindowInsets.navigationBars)
-                .padding(bottom = 20.dp),
-        )
+                .padding(bottom = 48.dp),
+        ) {
+            CaptureArea(
+                profile = currentProfile,
+                cameraState = uiState.cameraState,
+                onCapture = {
+                    scope.launch { onCapture() }
+                },
+                onOpenFilmRoll = onOpenFilmRoll,
+            )
+        }
     }
 }
 
@@ -223,27 +232,22 @@ private fun CameraPreview(
     context: Context,
     modifier: Modifier,
     profile: CameraProfile?,
-    onStartPreview: (Preview.SurfaceProvider) -> Unit,
+    lifecycleOwner: androidx.lifecycle.LifecycleOwner,
+    onBindPreview: (androidx.lifecycle.LifecycleOwner, androidx.camera.view.PreviewView) -> Unit,
 ) {
-    var previewStarted by remember { mutableStateOf(false) }
-
     AndroidView(
         factory = { ctx ->
             androidx.camera.view.PreviewView(ctx).apply {
                 scaleType = androidx.camera.view.PreviewView.ScaleType.FILL_START
+                // Bind camera once when the view is created
+                try {
+                    onBindPreview(lifecycleOwner, this)
+                } catch (e: Exception) {
+                    android.util.Log.e("Viewfinder", "Failed to bind preview", e)
+                }
             }
         },
         modifier = modifier,
-        update = { previewView ->
-            if (!previewStarted) {
-                previewStarted = true
-                try {
-                    onStartPreview(previewView.surfaceProvider)
-                } catch (e: Exception) {
-                    android.util.Log.e("Viewfinder", "Failed to start preview", e)
-                }
-            }
-        }
     )
 
     // If we still want to apply shader profile updates elsewhere, keep using the profile value
@@ -299,68 +303,110 @@ private fun CaptureArea(
     cameraState: CameraState,
     onCapture: () -> Unit,
     onOpenFilmRoll: () -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    val hapticFeedback = LocalHapticFeedback.current
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-    val buttonScale by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = if (isPressed) 0.9f else 1f,
-        label = "capture-scale",
-    )
+    val profileFont = profile?.fontFamily() ?: VintageCamTypography.digitalFont
+    var showFlash by remember { mutableStateOf(false) }
+
+    LaunchedEffect(cameraState) {
+        if (cameraState == CameraState.Capturing) {
+            showFlash = true
+            delay(100)
+            showFlash = false
+        }
+    }
 
     Column(
-        modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        val profileFont = profile?.fontFamily() ?: VintageCamTypography.digitalFont
         Text(
             text = profile?.displayName.orEmpty().uppercase(),
             color = Color.White,
             fontSize = 14.sp,
             fontWeight = FontWeight.Medium,
             fontFamily = profileFont,
+            modifier = Modifier.padding(bottom = 16.dp),
+        )
+
+        Text(
+            text = when (cameraState) {
+                CameraState.Capturing -> "BUSY"
+                CameraState.Processing -> "PROC"
+                CameraState.Previewing -> "READY"
+            },
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 10.sp,
+            fontFamily = profileFont,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(bottom = 8.dp),
+        )
+
+        CaptureButton(
+            onClick = onCapture,
+            onSwipeUp = onOpenFilmRoll,
+            enabled = cameraState == CameraState.Previewing,
+            modifier = Modifier.size(72.dp),
+        )
+
+        if (showFlash) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.White.copy(alpha = 0.6f)),
+            )
+        }
+    }
+}
+
+@Composable
+private fun CaptureButton(
+    onClick: () -> Unit,
+    onSwipeUp: () -> Unit,
+    enabled: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val haptic = LocalHapticFeedback.current
+    var isPressed by remember { mutableStateOf(false) }
+
+    val scale by androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (isPressed) 0.9f else 1f,
+        animationSpec = tween(100),
+        label = "capture-scale",
+    )
+
+    Box(
+        modifier = modifier
+            .scale(scale)
+            .pointerInput(enabled) {
+                detectTapGestures(
+                    onPress = {
+                        if (!enabled) return@detectTapGestures
+                        isPressed = true
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        tryAwaitRelease()
+                        isPressed = false
+                        onClick()
+                    },
+                )
+            }
+            .pointerInput(onSwipeUp) {
+                detectVerticalDragGestures { _, dragAmount ->
+                    if (dragAmount < -20f) {
+                        onSwipeUp()
+                    }
+                }
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .border(width = 4.dp, color = Color.White, shape = CircleShape),
         )
 
         Box(
             modifier = Modifier
-                .size(72.dp)
-                .scale(buttonScale)
-                .clip(CircleShape)
-                .background(Color.Black)
-                .border(4.dp, Color.White, CircleShape)
-                .pointerInput(onOpenFilmRoll) {
-                    detectVerticalDragGestures { _, dragAmount ->
-                        if (dragAmount < -20f) {
-                            onOpenFilmRoll()
-                        }
-                    }
-                }
-                .clickable(
-                    enabled = cameraState == CameraState.Previewing,
-                    interactionSource = interactionSource,
-                    indication = null,
-                ) {
-                    hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                    onCapture()
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(18.dp)
-                    .clip(CircleShape)
-                    .background(Color.White.copy(alpha = 0.08f)),
-            )
-        }
-
-        Text(
-            text = cameraStateLabel(cameraState),
-            color = Color.White.copy(alpha = 0.8f),
-            fontSize = 10.sp,
-            fontFamily = profileFont,
-            fontWeight = FontWeight.SemiBold,
+                .fillMaxSize(0.85f)
+                .background(Color.Black, CircleShape),
         )
     }
 }

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -53,63 +54,88 @@ fun FilmRollScreen(
     onClose: () -> Unit,
 ) {
     BackHandler(onBack = onClose)
-    val pagerState = rememberPagerState(pageCount = { photos.size.coerceAtLeast(1) })
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color.Black)
-            .pointerInput(onClose) {
-                detectVerticalDragGestures { _, dragAmount ->
-                    if (dragAmount > 28f) onClose()
-                }
-            },
-    ) {
-        if (photos.isEmpty()) {
-            EmptyRollState(onClose = onClose)
-        } else {
-            HorizontalPager(
-                state = pagerState,
-                modifier = Modifier.fillMaxSize(),
-            ) { page ->
-                val photo = photos[page]
-                var showMetadata by rememberSaveable(photo.uri.toString()) { mutableStateOf(false) }
+    // Force the pager to reinitialize when the photo count changes.
+    // Without this, rememberPagerState captures the initial page count
+    // and ignores subsequent additions while the screen is alive.
+    key(photos.size) {
+        val pagerState = rememberPagerState(
+            pageCount = { photos.size.coerceAtLeast(1) },
+        )
 
-                Box(
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+                .pointerInput(onClose) {
+                    detectVerticalDragGestures { _, dragAmount ->
+                        if (dragAmount > 28f) onClose()
+                    }
+                },
+        ) {
+            if (photos.isEmpty()) {
+                EmptyRollState(onClose = onClose)
+            } else {
+                HorizontalPager(
+                    state = pagerState,
                     modifier = Modifier.fillMaxSize(),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Image(
-                        bitmap = photo.bitmap.asImageBitmap(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .padding(24.dp)
-                            .border(
-                                width = borderWidthFor(photo.profile),
-                                color = Color.White,
-                                shape = RoundedCornerShape(2.dp),
-                            )
-                            .clip(RoundedCornerShape(2.dp))
-                            .combinedClickable(onLongClick = { showMetadata = !showMetadata }) { },
-                    )
+                ) { page ->
+                    val photo = photos[page]
+                    // Use a stable per-photo key for rememberSaveable.
+                    // Fall back to index when URI is empty (failed save).
+                    val saveableKey = if (photo.uri != android.net.Uri.EMPTY) {
+                        "meta_${photo.uri}"
+                    } else {
+                        "meta_page_$page"
+                    }
+                    var showMetadata by rememberSaveable(saveableKey) {
+                        mutableStateOf(false)
+                    }
 
-                    if (showMetadata) {
-                        MetadataOverlay(photo = photo)
+                    Box(
+                        modifier = Modifier.fillMaxSize(),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Image(
+                            bitmap = photo.bitmap.asImageBitmap(),
+                            contentDescription = null,
+                            contentScale = ContentScale.Fit,
+                            modifier = Modifier
+                                .padding(24.dp)
+                                .border(
+                                    width = borderWidthFor(photo.profile),
+                                    color = Color.White,
+                                    shape = RoundedCornerShape(2.dp),
+                                )
+                                .clip(RoundedCornerShape(2.dp))
+                                .combinedClickable(
+                                    onLongClick = { showMetadata = !showMetadata },
+                                    onClick = {},
+                                ),
+                        )
+
+                        if (showMetadata) {
+                            MetadataOverlay(photo = photo)
+                        }
                     }
                 }
             }
-        }
 
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.TopEnd,
-        ) {
-            IconButton(
-                onClick = onClose,
-                modifier = Modifier.padding(12.dp),
+            // Close button (always on top)
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.TopEnd,
             ) {
-                Icon(imageVector = Icons.Default.Close, contentDescription = "Close film roll", tint = Color.White)
+                IconButton(
+                    onClick = onClose,
+                    modifier = Modifier.padding(12.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Close,
+                        contentDescription = "Close film roll",
+                        tint = Color.White,
+                    )
+                }
             }
         }
     }
@@ -145,8 +171,17 @@ private fun MetadataOverlay(photo: CapturedPhoto) {
             modifier = Modifier.padding(24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Text(photo.profile.displayName, color = Color.White, fontSize = 12.sp, fontFamily = fontFamilyFor(photo.profile))
-            Text(formatTimestamp(photo.timestampMillis), color = Color.White.copy(alpha = 0.65f), fontSize = 10.sp)
+            Text(
+                photo.profile.displayName,
+                color = Color.White,
+                fontSize = 12.sp,
+                fontFamily = fontFamilyFor(photo.profile),
+            )
+            Text(
+                formatTimestamp(photo.timestampMillis),
+                color = Color.White.copy(alpha = 0.65f),
+                fontSize = 10.sp,
+            )
         }
     }
 }

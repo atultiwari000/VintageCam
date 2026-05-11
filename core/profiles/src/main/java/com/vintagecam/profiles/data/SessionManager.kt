@@ -30,7 +30,7 @@ class SessionManager @Inject constructor() {
      * Immediately visible to all collectors of [capturedPhotos].
      */
     fun addCapturedPhoto(photo: CapturedPhoto) {
-        _capturedPhotos.update { it + photo }
+        _capturedPhotos.update { listOf(photo) + it }
         android.util.Log.d(
             "SessionManager",
             "addCapturedPhoto: ${photo.profile.id} — roll size now ${_capturedPhotos.value.size}",

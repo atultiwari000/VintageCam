@@ -46,6 +46,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -93,6 +94,7 @@ fun ViewfinderScreen(
     viewModel: ViewfinderViewModel = hiltViewModel(),
     onOpenFilmRoll: () -> Unit,
 ) {
+    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val uiState by viewModel.uiState.collectAsState()
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
@@ -103,20 +105,36 @@ fun ViewfinderScreen(
         }
     }
 
+    // Create the PreviewView once and keep it across recompositions.
+    val previewView = remember {
+        androidx.camera.view.PreviewView(context).apply {
+            scaleType = androidx.camera.view.PreviewView.ScaleType.FILL_START
+        }
+    }
+
+    // CRITICAL: Bind preview while this screen is visible.
+    // When navigating to film roll and back, NavHost removes and
+    // re-adds this composable — DisposableEffect ensures CameraX
+    // rebinds every time, preventing the black screen bug.
+    DisposableEffect(lifecycleOwner) {
+        viewModel.bindCamera(lifecycleOwner, previewView)
+        onDispose {
+            viewModel.onStopPreview()
+        }
+    }
+
     when (cameraPermissionState.status) {
         is PermissionStatus.Denied -> PermissionDeniedContent()
         PermissionStatus.Granted -> {
             ViewfinderContent(
                 uiState = uiState,
+                previewView = previewView,
                 onSwitchCamera = viewModel::onSwitchCamera,
                 onCapture = viewModel::onCapture,
                 onToggleFlash = viewModel::onToggleFlash,
                 onProfilePageChanged = viewModel::onProfileSelected,
                 onGalleryClick = onOpenFilmRoll,
                 onOpenFilmRoll = onOpenFilmRoll,
-                onBindPreview = { owner, previewView ->
-                    viewModel.bindCamera(owner, previewView)
-                },
             )
         }
     }
@@ -142,13 +160,13 @@ private fun PermissionDeniedContent() {
 @Composable
 private fun ViewfinderContent(
     uiState: ViewfinderUiState,
+    previewView: androidx.camera.view.PreviewView,
     onSwitchCamera: () -> Unit,
     onCapture: () -> Unit,
     onToggleFlash: () -> Unit,
     onProfilePageChanged: (Int) -> Unit,
     onGalleryClick: () -> Unit,
     onOpenFilmRoll: () -> Unit,
-    onBindPreview: (androidx.lifecycle.LifecycleOwner, androidx.camera.view.PreviewView) -> Unit,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -178,16 +196,10 @@ private fun ViewfinderContent(
             modifier = Modifier.fillMaxSize(),
             userScrollEnabled = uiState.profiles.isNotEmpty(),
         ) { _ ->
-                    CameraPreview(
-                        context = context,
-                        modifier = Modifier.fillMaxSize(),
-                        profile = currentProfile,
-                        lifecycleOwner = lifecycleOwner,
-                        onBindPreview = { owner, previewView ->
-                            // Start preview once when the PreviewView is created
-                            onBindPreview(owner, previewView)
-                        }
-                    )
+            AndroidView(
+                factory = { previewView },
+                modifier = Modifier.fillMaxSize(),
+            )
         }
 
         // Chrome overlay (draws on top of full-screen preview)
@@ -225,32 +237,6 @@ private fun ViewfinderContent(
             )
         }
     }
-}
-
-@Composable
-private fun CameraPreview(
-    context: Context,
-    modifier: Modifier,
-    profile: CameraProfile?,
-    lifecycleOwner: androidx.lifecycle.LifecycleOwner,
-    onBindPreview: (androidx.lifecycle.LifecycleOwner, androidx.camera.view.PreviewView) -> Unit,
-) {
-    AndroidView(
-        factory = { ctx ->
-            androidx.camera.view.PreviewView(ctx).apply {
-                scaleType = androidx.camera.view.PreviewView.ScaleType.FILL_START
-                // Bind camera once when the view is created
-                try {
-                    onBindPreview(lifecycleOwner, this)
-                } catch (e: Exception) {
-                    android.util.Log.e("Viewfinder", "Failed to bind preview", e)
-                }
-            }
-        },
-        modifier = modifier,
-    )
-
-    // If we still want to apply shader profile updates elsewhere, keep using the profile value
 }
 
 @Composable

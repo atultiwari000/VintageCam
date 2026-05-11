@@ -73,6 +73,10 @@ class ViewfinderViewModel @Inject constructor(
         }
     }
 
+    fun onStopPreview() {
+        cameraEngine.stopPreview()
+    }
+
     fun onProfileSelected(index: Int) {
         if (index !in profiles.indices) return
         cameraEngine.applyProfile(profiles[index])

@@ -63,7 +63,7 @@ fun ViewfinderScreen(viewModel: ViewfinderViewModel = hiltViewModel()) {
     val cameraPermissionState = rememberPermissionState(Manifest.permission.CAMERA)
 
     LaunchedEffect(Unit) {
-        if (!cameraPermissionState.status.isGranted) {
+        if (cameraPermissionState.status != PermissionStatus.Granted) {
             cameraPermissionState.launchPermissionRequest()
         }
     }

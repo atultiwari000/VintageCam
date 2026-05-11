@@ -230,42 +230,27 @@ private fun CameraPreview(
     onStartPreview: (Preview.SurfaceProvider) -> Unit,
 ) {
     var previewStarted by remember { mutableStateOf(false) }
-    var glView by remember { mutableStateOf<GLSurfaceView?>(null) }
-    val renderer = remember {
-        PreviewFilterRenderer { _ ->
-            glView?.requestRender()
-        }
-    }
 
     AndroidView(
-        factory = {
-            GLSurfaceView(context).apply {
-                setEGLContextClientVersion(2)
-                preserveEGLContextOnPause = true
-                renderMode = GLSurfaceView.RENDERMODE_WHEN_DIRTY
-                setRenderer(renderer)
-                renderer.attachRenderRequest { requestRender() }
-                glView = this
+        factory = { ctx ->
+            androidx.camera.view.PreviewView(ctx).apply {
+                scaleType = androidx.camera.view.PreviewView.ScaleType.FILL_START
             }
         },
         modifier = modifier,
+        update = { previewView ->
+            if (!previewStarted) {
+                previewStarted = true
+                try {
+                    onStartPreview(previewView.surfaceProvider)
+                } catch (e: Exception) {
+                    android.util.Log.e("Viewfinder", "Failed to start preview", e)
+                }
+            }
+        }
     )
 
-    LaunchedEffect(profile) {
-        profile?.let { currentProfile ->
-            glView?.queueEvent {
-                renderer.setProfile(currentProfile)
-            }
-            glView?.requestRender()
-        }
-    }
-
-    LaunchedEffect(glView) {
-        if (!previewStarted && glView != null) {
-            previewStarted = true
-            onStartPreview(renderer.previewSurfaceProvider)
-        }
-    }
+    // If we still want to apply shader profile updates elsewhere, keep using the profile value
 }
 
 @Composable

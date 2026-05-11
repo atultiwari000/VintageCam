@@ -53,7 +53,8 @@ class ViewfinderViewModel @Inject constructor(
     val uiState: StateFlow<ViewfinderUiState> = _uiState.asStateFlow()
 
     init {
-        profiles.firstOrNull()?.let(cameraEngine::applyProfile)
+        // Safe: only sets state, no camera access
+        // Camera engine initialization happens during preview start in ViewfinderScreen
     }
 
     fun onStartPreview(lifecycleOwner: LifecycleOwner, surfaceProvider: Preview.SurfaceProvider) {

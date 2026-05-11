@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="vhs_green">#FF00FF00</color>
+    <color name="vhs_red">#FFFF0000</color>
+    <color name="film_yellow">#FFFFFF00</color>
+</resources>

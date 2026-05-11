@@ -1,18 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.camera" android:required="true" />
     <application
-        android:name=".VintageCamApplication"
+        android:name="com.vintagecam.app.VintageCamApplication"
         android:allowBackup="true"
         android:label="@string/app_name"
         android:theme="@style/Theme.VintageCam">
         <activity
-            android:name=".MainActivity"
+            android:name="com.vintagecam.app.MainActivity"
             android:exported="true"
-            android:theme="@style/Theme.VintageCam"
-            android:screenOrientation="portrait">
+            android:theme="@style/Theme.VintageCam">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

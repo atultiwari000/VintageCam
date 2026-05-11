@@ -6,6 +6,7 @@ import android.graphics.ImageFormat
 import android.graphics.YuvImage
 import android.hardware.camera2.CaptureRequest
 import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -26,6 +27,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
+@ExperimentalCamera2Interop
 class CameraXEngineImpl @Inject constructor(
     @ApplicationContext private val appContext: Context,
     private val cpuFilterApplier: CpuFilterApplier,
@@ -105,6 +107,7 @@ class CameraXEngineImpl @Inject constructor(
         activeProfile = profile
     }
 
+    @ExperimentalCamera2Interop
     private fun bindUseCases() {
         val owner = lifecycleOwner ?: return
         val surface = surfaceProvider ?: return

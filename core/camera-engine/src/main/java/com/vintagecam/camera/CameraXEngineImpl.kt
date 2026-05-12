@@ -46,8 +46,6 @@ class CameraXEngineImpl @Inject constructor(
         currentProfile = profile
     }
 
-    
-    
     override suspend fun startPreview(
         lifecycleOwner: LifecycleOwner,
         surfaceProvider: Preview.SurfaceProvider
@@ -55,28 +53,27 @@ class CameraXEngineImpl @Inject constructor(
         boundLifecycleOwner = lifecycleOwner
         boundSurfaceProvider = surfaceProvider
 
-        // Acquire provider and bind on the main dispatcher. Use ListenableFuture.await() helper.
         withContext(Dispatchers.Main) {
             val provider = ProcessCameraProvider.getInstance(context).await()
             cameraProvider = provider
             bindInternal(lifecycleOwner, surfaceProvider)
         }
     }
+
     override fun stopPreview() {
         try {
             cameraProvider?.unbindAll()
+            preview = null
+            imageCapture = null
         } catch (e: Exception) {
             android.util.Log.e("CameraXEngine", "Failed to stop preview", e)
         }
     }
 
-    
-    
-    override suspend fun capturePhoto(profile: CameraProfile): com.vintagecam.camera.CaptureResult {
+    override suspend fun capturePhoto(profile: CameraProfile): CaptureResult {
         val capture = imageCapture ?: throw IllegalStateException("Camera not started")
 
-        // Capture ImageProxy on main thread
-        val imageProxy = withContext(kotlinx.coroutines.Dispatchers.Main) {
+        val imageProxy = withContext(Dispatchers.Main) {
             suspendCancellableCoroutine<ImageProxy> { cont ->
                 try {
                     capture.takePicture(
@@ -85,7 +82,6 @@ class CameraXEngineImpl @Inject constructor(
                             override fun onCaptureSuccess(image: ImageProxy) {
                                 cont.resume(image) {}
                             }
-
                             override fun onError(exception: ImageCaptureException) {
                                 cont.resumeWithException(exception)
                             }
@@ -98,22 +94,18 @@ class CameraXEngineImpl @Inject constructor(
         }
 
         val timestamp = System.currentTimeMillis()
-
-        // ✅ Safe close with .use() (ImageProxy implements AutoCloseable)
         val bitmap = imageProxy.use { proxy ->
             proxy.toBitmap()
         }
 
-        // Apply CPU post-processing off the main thread
         val postProcessor = CapturePostProcessor()
-        val processed = withContext(kotlinx.coroutines.Dispatchers.Default) {
+        val processed = withContext(Dispatchers.Default) {
             postProcessor.apply(bitmap, profile, timestamp)
         }
 
-        // Save to gallery on IO dispatcher
         val gallerySaver = GallerySaver(context)
         val uri = try {
-            withContext(kotlinx.coroutines.Dispatchers.IO) {
+            withContext(Dispatchers.IO) {
                 gallerySaver.save(processed, profile, timestamp)
             }
         } catch (e: Exception) {
@@ -121,8 +113,9 @@ class CameraXEngineImpl @Inject constructor(
             Uri.EMPTY
         }
 
-        return com.vintagecam.camera.CaptureResult(processed, uri, timestamp)
+        return CaptureResult(processed, uri, timestamp)
     }
+
     override fun switchCamera() {
         currentCameraSelector = if (currentCameraSelector == CameraSelector.DEFAULT_BACK_CAMERA) {
             CameraSelector.DEFAULT_FRONT_CAMERA
@@ -152,6 +145,9 @@ class CameraXEngineImpl @Inject constructor(
     ) {
         val provider = cameraProvider ?: throw IllegalStateException("Camera provider unavailable")
 
+        // CRITICAL FIX: Unbind old use cases before creating new ones
+        provider.unbindAll()
+
         preview = Preview.Builder()
             .build()
             .also { it.setSurfaceProvider(surfaceProvider) }
@@ -168,7 +164,6 @@ class CameraXEngineImpl @Inject constructor(
         )
     }
 
-    // Await extension for ListenableFuture tied to this instance's context
     private suspend fun <T> ListenableFuture<T>.await(): T = suspendCancellableCoroutine { cont ->
         try {
             addListener({
@@ -183,30 +178,19 @@ class CameraXEngineImpl @Inject constructor(
         }
     }
 
-    /**
-     * Convert this ImageProxy to a Bitmap.
-     *
-     * Handles both [ImageFormat.JPEG] and [ImageFormat.YUV_420_888].
-     * CameraX [ImageCapture.OnImageCapturedCallback] commonly returns JPEG —
-     * the old code only handled YUV_420_888 and crashed on JPEG at planes[1].
-     */
     private fun ImageProxy.toBitmap(): Bitmap {
         val format = this.format
 
-        // --- JPEG: single plane with compressed bytes ---
         if (format == ImageFormat.JPEG) {
             val buffer = planes[0].buffer
             val bytes = ByteArray(buffer.remaining())
             buffer.get(bytes)
             return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                ?: throw IllegalStateException("Failed to decode JPEG bitmap")
         }
 
-        // --- YUV_420_888 → NV21 → JPEG ---
         if (format != ImageFormat.YUV_420_888) {
-            android.util.Log.w(
-                "CameraXEngine",
-                "Unexpected ImageProxy format: $format — trying YUV fallback",
-            )
+            android.util.Log.w("CameraXEngine", "Unexpected format: $format — trying YUV fallback")
         }
 
         val yBuffer = planes[0].buffer
@@ -214,21 +198,15 @@ class CameraXEngineImpl @Inject constructor(
         val vBuffer = planes[2].buffer
         val ySize = yBuffer.remaining()
         val uvSize = uBuffer.remaining()
-        require(vBuffer.remaining() == uvSize) {
-            "U/V plane sizes differ: uSize=$uvSize vSize=${vBuffer.remaining()}"
-        }
 
-        // NV21 layout: YYYY... VUVUVU...
-        // The chroma region (size = 2 * uvSize) has V and U interleaved.
         val nv21 = ByteArray(ySize + 2 * uvSize)
         yBuffer.get(nv21, 0, ySize)
 
-        // Interleave V and U for NV21 format — V at even positions, U at odd.
-        // Bulk-copying all V then all U (the old approach) produces wrong colors.
         val vArr = ByteArray(uvSize)
         val uArr = ByteArray(uvSize)
         vBuffer.get(vArr)
         uBuffer.get(uArr)
+
         var chromaOffset = ySize
         for (i in 0 until uvSize) {
             nv21[chromaOffset++] = vArr[i]
@@ -239,5 +217,6 @@ class CameraXEngineImpl @Inject constructor(
         val out = ByteArrayOutputStream()
         yuvImage.compressToJpeg(Rect(0, 0, width, height), 100, out)
         return BitmapFactory.decodeByteArray(out.toByteArray(), 0, out.size())
+            ?: throw IllegalStateException("Failed to decode YUV bitmap")
     }
 }

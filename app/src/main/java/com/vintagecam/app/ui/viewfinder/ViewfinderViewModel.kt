@@ -57,7 +57,6 @@ class ViewfinderViewModel @Inject constructor(
     val uiState: StateFlow<ViewfinderUiState> = _uiState.asStateFlow()
 
     init {
-        // Preload shutter sounds once at startup
         viewModelScope.launch {
             cameraSoundEngine.preload(appContext, profiles)
         }
@@ -96,25 +95,17 @@ class ViewfinderViewModel @Inject constructor(
     }
 
     fun onCapture() {
-        // Guard: only allow capture when previewing
         if (_uiState.value.cameraState != CameraState.Previewing) return
 
         viewModelScope.launch {
             val profile = profiles.getOrNull(_uiState.value.currentProfileIndex) ?: return@launch
 
             try {
-                // --- Capture sequence ---
                 _uiState.update { it.copy(cameraState = CameraState.Capturing) }
-
-                // Haptic handled by UI; play shutter
                 cameraSoundEngine.playShutter(profile)
-
-                // Simulate vintage shutter delay
                 delay(profile.captureLatencyMs)
-
                 _uiState.update { it.copy(cameraState = CameraState.Processing) }
 
-                // Suspend until the camera pipeline produces a result
                 val result: CaptureResult = cameraEngine.capturePhoto(profile)
 
                 val capturedPhoto = CapturedPhoto(
@@ -124,13 +115,15 @@ class ViewfinderViewModel @Inject constructor(
                     uri = result.uri,
                 )
 
-                // Persist to SessionManager and update UI state atomically
                 sessionManager.addCapturedPhoto(capturedPhoto)
+
+                // FIX: Read from SessionManager to get correct (newest-first) order
+                val updatedPhotos = sessionManager.getCurrentRollPhotos()
 
                 _uiState.update { state ->
                     state.copy(
                         cameraState = CameraState.Previewing,
-                        capturedPhotos = state.capturedPhotos + capturedPhoto,
+                        capturedPhotos = updatedPhotos,
                     )
                 }
 
@@ -139,9 +132,6 @@ class ViewfinderViewModel @Inject constructor(
                     "Capture complete: profile=${profile.id} uri=${result.uri}",
                 )
             } catch (e: Throwable) {
-                // Catch Throwable (not just Exception) so that OOM, linkage errors,
-                // or any other JVM Error still restore Previewing state instead of
-                // leaving the UI stuck in Capturing/Processing.
                 android.util.Log.e("ViewfinderViewModel", "Capture failed", e)
                 _uiState.update { it.copy(cameraState = CameraState.Previewing) }
             }

@@ -19,17 +19,17 @@ class ProfileRepository @Inject constructor() {
             displayName = "VHS-C 1985",
             era = Era.EIGHTIES,
             colorMatrix = floatArrayOf(
-                1.05f, -0.02f, -0.08f,
-                -0.05f, 1.10f, -0.05f,
-                0.02f, -0.10f, 1.08f
+                1.25f, -0.10f, -0.15f,
+                -0.15f, 1.35f, -0.20f,
+                0.05f, -0.25f, 1.20f
             ),
-            vignetteStrength = 0.25f,
-            grainIntensity = 0.12f,
+            vignetteStrength = 0.45f,
+            grainIntensity = 0.30f,
             aspectRatio = AspectRatio.RATIO_4_3,
             viewfinderType = ViewfinderType.CRT,
             captureLatencyMs = 150L,
-            shaderPipeline = listOf(ShaderType.COLOR_MATRIX, ShaderType.VIGNETTE, ShaderType.GRAIN),
-            chromaticAberration = 0.015f,
+            shaderPipeline = listOf(ShaderType.COLOR_MATRIX, ShaderType.VIGNETTE, ShaderType.GRAIN, ShaderType.SCANLINES),
+            chromaticAberration = 0.02f,
             interlacedPreview = true
         ),
         CameraProfile(
@@ -37,30 +37,30 @@ class ProfileRepository @Inject constructor() {
             displayName = "FunSaver '98",
             era = Era.NINETIES,
             colorMatrix = floatArrayOf(
-                1.10f, -0.05f, -0.10f,
-                -0.10f, 1.20f, -0.10f,
-                -0.05f, -0.15f, 1.20f
+                1.30f, -0.15f, -0.15f,
+                -0.20f, 1.45f, -0.25f,
+                -0.10f, -0.30f, 1.40f
             ),
-            vignetteStrength = 0.45f,
-            grainIntensity = 0.25f,
+            vignetteStrength = 0.65f,
+            grainIntensity = 0.45f,
             aspectRatio = AspectRatio.RATIO_3_2,
             viewfinderType = ViewfinderType.OPTICAL,
             captureLatencyMs = 80L,
             shaderPipeline = listOf(ShaderType.COLOR_MATRIX, ShaderType.VIGNETTE, ShaderType.GRAIN),
             dateStampStyle = DateStampStyle.YELLOW_CLASSIC,
-            crushedBlacks = 0.05f
+            crushedBlacks = 0.08f
         ),
         CameraProfile(
             id = "digicam_2003",
             displayName = "CyberShot 2003",
             era = Era.TWO_THOUSANDS,
             colorMatrix = floatArrayOf(
-                1.20f, -0.10f, -0.10f,
-                -0.15f, 1.30f, -0.15f,
-                -0.05f, -0.10f, 1.15f
+                1.40f, -0.15f, -0.15f,
+                -0.25f, 1.50f, -0.25f,
+                -0.10f, -0.20f, 1.30f
             ),
-            vignetteStrength = 0.10f,
-            grainIntensity = 0.08f,
+            vignetteStrength = 0.20f,
+            grainIntensity = 0.15f,
             aspectRatio = AspectRatio.RATIO_4_3,
             viewfinderType = ViewfinderType.LCD,
             captureLatencyMs = 400L,

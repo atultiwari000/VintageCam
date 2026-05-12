@@ -21,41 +21,28 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.math.hypot
 
-/**
- * Applies vintage camera effects to captured bitmaps.
- *
- * CRITICAL RULE: Every filter creates a FRESH output bitmap and draws
- * the SOURCE onto it. Never create [Canvas] backed by the same bitmap
- * you are reading from — hardware-accelerated Canvas can silently drop
- * draw calls when source and destination share backing memory.
- */
 @Singleton
 class CapturePostProcessor @Inject constructor() {
 
+    private val random = java.util.Random()
+
     fun apply(input: Bitmap, profile: CameraProfile, capturedAtMillis: Long): Bitmap {
-        // Always start from a fresh mutable ARGB_8888 copy so the original
-        // input bitmap (which may come from CameraX JPEG/YUV) is never mutated.
         var result = input.copy(Bitmap.Config.ARGB_8888, true)
 
-        // 1 — Color matrix (tone adjustment)
         result = applyColorMatrix(result, profile.colorMatrix)
 
-        // 2 — Vignette (radial darkening at edges)
-        if (profile.vignetteStrength > 0f) {
+        if (profile.vignetteStrength > 0.01f) {
             result = applyVignette(result, profile.vignetteStrength)
         }
 
-        // 3 — Film grain (per-pixel luminance noise)
-        if (profile.grainIntensity > 0f) {
+        if (profile.grainIntensity > 0.01f) {
             result = applyGrain(result, profile.grainIntensity)
         }
 
-        // 3b — Scanlines (for CRT / VHS profiles that have interlaced preview)
         if (profile.interlacedPreview || profile.shaderPipeline.contains(ShaderType.SCANLINES)) {
-            result = applyScanlines(result, 0.3f)
+            result = applyScanlines(result, 0.45f)
         }
 
-        // 4 — Date stamp overlay
         if (profile.dateStampStyle != DateStampStyle.NONE) {
             result = applyDateStamp(result, profile.dateStampStyle, capturedAtMillis)
         }
@@ -63,11 +50,7 @@ class CapturePostProcessor @Inject constructor() {
         return result
     }
 
-    // ── Color Matrix ────────────────────────────────────────────────
-
     private fun applyColorMatrix(bitmap: Bitmap, matrix: FloatArray): Bitmap {
-        // ProfileRepository stores 9-element (3×3) RGB matrices.
-        // ColorMatrix(float[]) requires a 20-element (4×5) row-major array.
         val fullMatrix = if (matrix.size == 9) {
             floatArrayOf(
                 matrix[0], matrix[1], matrix[2], 0f, 0f,
@@ -79,21 +62,14 @@ class CapturePostProcessor @Inject constructor() {
             matrix
         }
 
-        // Fresh mutable output — Canvas source ≠ Canvas backing.
-        val output = Bitmap.createBitmap(bitmap.width, bitmap.height, bitmap.config)
-
+        val output = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             colorFilter = ColorMatrixColorFilter(ColorMatrix(fullMatrix))
         }
-
-        Canvas(output).apply {
-            drawBitmap(bitmap, 0f, 0f, paint)
-        }
-
+        Canvas(output).drawBitmap(bitmap, 0f, 0f, paint)
+        bitmap.recycleSafe()
         return output
     }
-
-    // ── Vignette ────────────────────────────────────────────────────
 
     private fun applyVignette(bitmap: Bitmap, strength: Float): Bitmap {
         val width = bitmap.width.toFloat()
@@ -102,17 +78,14 @@ class CapturePostProcessor @Inject constructor() {
         val centerY = height / 2f
         val maxRadius = hypot(centerX.toDouble(), centerY.toDouble()).toFloat()
 
-        // Fresh output — start blank, draw source onto it.
-        val output = Bitmap.createBitmap(bitmap.width, bitmap.height, bitmap.config)
-
+        val output = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(output)
         canvas.drawBitmap(bitmap, 0f, 0f, null)
 
-        // Then draw the vignette gradient ON TOP.
         val gradient = RadialGradient(
             centerX, centerY, maxRadius,
             intArrayOf(Color.TRANSPARENT, Color.BLACK),
-            floatArrayOf(0.7f, 1f),
+            floatArrayOf(0.55f, 1f),
             Shader.TileMode.CLAMP,
         )
 
@@ -123,27 +96,23 @@ class CapturePostProcessor @Inject constructor() {
         }
 
         canvas.drawRect(0f, 0f, width, height, vignettePaint)
+        bitmap.recycleSafe()
         return output
     }
-
-    // ── Grain ───────────────────────────────────────────────────────
 
     private fun applyGrain(bitmap: Bitmap, intensity: Float): Bitmap {
         val w = bitmap.width
         val h = bitmap.height
         val totalPx = w * h
 
-        // Read source pixels.
         val srcPixels = IntArray(totalPx)
         bitmap.getPixels(srcPixels, 0, w, 0, 0, w, h)
 
-        // Fresh mutable output — start blank.
-        val output = Bitmap.createBitmap(bitmap.width, bitmap.height, bitmap.config)
+        val output = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
         val dstPixels = IntArray(totalPx)
 
-        val random = java.util.Random()
         for (i in 0 until totalPx) {
-            val noise = ((random.nextFloat() - 0.5f) * intensity * 255f).toInt()
+            val noise = ((random.nextFloat() - 0.5f) * intensity * 120f).toInt()
             val p = srcPixels[i]
             dstPixels[i] = Color.rgb(
                 (Color.red(p) + noise).coerceIn(0, 255),
@@ -153,79 +122,66 @@ class CapturePostProcessor @Inject constructor() {
         }
 
         output.setPixels(dstPixels, 0, w, 0, 0, w, h)
+        bitmap.recycleSafe()
         return output
     }
-
-    // ── Date Stamp ──────────────────────────────────────────────────
-
-    private fun applyDateStamp(
-        bitmap: Bitmap,
-        style: DateStampStyle,
-        timestamp: Long,
-    ): Bitmap {
-        val width = bitmap.width.toFloat()
-        val height = bitmap.height.toFloat()
-
-        // Fresh output — start blank, draw source onto it.
-        val output = Bitmap.createBitmap(bitmap.width, bitmap.height, bitmap.config)
-
-        val canvas = Canvas(output)
-        canvas.drawBitmap(bitmap, 0f, 0f, null)
-
-        // Then draw the date text ON TOP.
-        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            textSize = height * 0.03f
-            typeface = Typeface.MONOSPACE
-            when (style) {
-                DateStampStyle.YELLOW_CLASSIC -> {
-                    color = Color.YELLOW
-                    setShadowLayer(2f, 1f, 1f, Color.BLACK)
-                }
-                DateStampStyle.RED_LED -> {
-                    color = Color.RED
-                }
-                DateStampStyle.WHITE_LCD -> {
-                    color = Color.WHITE
-                    setShadowLayer(1f, 0f, 0f, Color.BLACK)
-                }
-                else -> color = Color.WHITE
-            }
-        }
-
-        val dateText = SimpleDateFormat("yyyy.MM.dd", Locale.US)
-            .format(Date(timestamp))
-
-        canvas.drawText(
-            dateText,
-            width * 0.05f,
-            height * 0.95f,
-            textPaint,
-        )
-
-        return output
-    }
-
-    // ── Scanlines ─────────────────────────────────────────────────
 
     private fun applyScanlines(bitmap: Bitmap, intensity: Float): Bitmap {
-        val newBitmap = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(newBitmap)
+        val output = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(output)
         canvas.drawBitmap(bitmap, 0f, 0f, null)
 
         val paint = Paint().apply {
             color = Color.BLACK
-            alpha = (intensity * 0.3f * 255f).toInt().coerceIn(0, 255)
+            alpha = (intensity * 255f).toInt().coerceIn(0, 255)
             strokeWidth = 2f
         }
 
         val lineHeight = 4f
         var y = 0f
         while (y < bitmap.height) {
-            canvas.drawLine(0f, y, bitmap.width.toFloat(), y, paint)
+            canvas.drawLine(0f, y, bitmap.width.toFloat(), y + 1f, paint)
             y += lineHeight
         }
 
-        bitmap.recycle()
-        return newBitmap
+        bitmap.recycleSafe()
+        return output
+    }
+
+    private fun applyDateStamp(bitmap: Bitmap, style: DateStampStyle, timestamp: Long): Bitmap {
+        val width = bitmap.width.toFloat()
+        val height = bitmap.height.toFloat()
+
+        val output = Bitmap.createBitmap(bitmap.width, bitmap.height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(output)
+        canvas.drawBitmap(bitmap, 0f, 0f, null)
+
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textSize = height * 0.035f
+            typeface = Typeface.MONOSPACE
+            when (style) {
+                DateStampStyle.YELLOW_CLASSIC -> {
+                    color = Color.YELLOW
+                    setShadowLayer(3f, 1f, 1f, Color.BLACK)
+                }
+                DateStampStyle.RED_LED -> {
+                    color = Color.RED
+                }
+                DateStampStyle.WHITE_LCD -> {
+                    color = Color.WHITE
+                    setShadowLayer(2f, 0f, 0f, Color.BLACK)
+                }
+                else -> color = Color.WHITE
+            }
+        }
+
+        val dateText = SimpleDateFormat("yyyy.MM.dd", Locale.US).format(Date(timestamp))
+        canvas.drawText(dateText, width * 0.05f, height * 0.92f, textPaint)
+        bitmap.recycleSafe()
+        return output
+    }
+
+    private fun Bitmap.recycleSafe() {
+        if (!isRecycled) recycle()
     }
 }

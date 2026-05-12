@@ -326,19 +326,26 @@ private fun CaptureArea(
             modifier = Modifier.padding(bottom = 8.dp),
         )
 
-        CaptureButton(
-            onClick = onCapture,
-            onSwipeUp = onOpenFilmRoll,
-            enabled = cameraState == CameraState.Previewing,
+        // Wrap button + flash in a Box so flash is scoped to button size
+        Box(
             modifier = Modifier.size(72.dp),
-        )
-
-        if (showFlash) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.White.copy(alpha = 0.6f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            // The actual button
+            CaptureButton(
+                onClick = onCapture,
+                onSwipeUp = onOpenFilmRoll,
+                enabled = cameraState == CameraState.Previewing,
             )
+
+            // Flash overlay scoped to button size only
+            if (showFlash) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.White.copy(alpha = 0.6f), CircleShape),
+                )
+            }
         }
     }
 }

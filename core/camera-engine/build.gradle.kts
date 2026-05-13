@@ -27,6 +27,7 @@ android {
 }
 dependencies {
     implementation(project(":core:profiles"))
+    implementation(project(":core:image-processor"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.exifinterface)
     api(libs.camera.core)

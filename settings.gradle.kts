@@ -17,3 +17,4 @@ rootProject.name = "VintageCam"
 include(":app")
 include(":core:camera-engine")
 include(":core:profiles")
+include(":core:image-processor")

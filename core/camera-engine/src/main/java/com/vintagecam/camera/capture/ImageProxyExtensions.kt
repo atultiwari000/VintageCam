@@ -7,12 +7,57 @@ import android.graphics.YuvImage
 import androidx.camera.core.ImageProxy
 import java.io.ByteArrayOutputStream
 
+/**
+ * Extracted YUV plane data for direct native processing.
+ */
+data class YuvBytes(
+    val y: ByteArray,
+    val u: ByteArray,
+    val v: ByteArray,
+    val width: Int,
+    val height: Int,
+    val yStride: Int,
+    val uStride: Int,
+    val vStride: Int,
+    val uvPixelStride: Int,
+)
+
 internal fun ImageProxy.toBitmap(): Bitmap {
     return when (format) {
         ImageFormat.YUV_420_888 -> yuv420888ToBitmap()
         ImageFormat.JPEG, 256 -> jpegToBitmap()
         else -> throw IllegalArgumentException("Unsupported image format: $format")
     }
+}
+
+/**
+ * Extract YUV plane bytes for direct native processing (zero JPEG round-trip).
+ * Returns all plane data and stride information needed by the native YUV→RGBA converter.
+ */
+internal fun ImageProxy.toYuvBytes(): YuvBytes {
+    val yBuffer = planes[0].buffer
+    val uBuffer = planes[1].buffer
+    val vBuffer = planes[2].buffer
+
+    val yBytes = ByteArray(yBuffer.remaining())
+    val uBytes = ByteArray(uBuffer.remaining())
+    val vBytes = ByteArray(vBuffer.remaining())
+
+    yBuffer.get(yBytes)
+    uBuffer.get(uBytes)
+    vBuffer.get(vBytes)
+
+    return YuvBytes(
+        y = yBytes,
+        u = uBytes,
+        v = vBytes,
+        width = width,
+        height = height,
+        yStride = planes[0].rowStride,
+        uStride = planes[1].rowStride,
+        vStride = planes[2].rowStride,
+        uvPixelStride = planes[1].pixelStride,
+    )
 }
 
 private fun ImageProxy.jpegToBitmap(): Bitmap {

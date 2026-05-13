@@ -2,10 +2,7 @@ package com.vintagecam.camera
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.ImageFormat
-import android.graphics.Rect
-import android.graphics.YuvImage
 import android.net.Uri
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -17,13 +14,13 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
 import com.vintagecam.camera.capture.GallerySaver
 import com.vintagecam.camera.filter.FilterFactory
+import com.vintagecam.imageprocessor.NativeImageProcessor
 import com.vintagecam.profiles.CameraProfile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import com.google.common.util.concurrent.ListenableFuture
-import java.io.ByteArrayOutputStream
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
@@ -33,6 +30,7 @@ import kotlin.coroutines.resumeWithException
 class CameraXEngineImpl @Inject constructor(
     @ApplicationContext private val context: Context,
     private val filterFactory: FilterFactory,
+    private val nativeProcessor: NativeImageProcessor,
 ) : CameraEngine {
 
     private var cameraProvider: ProcessCameraProvider? = null
@@ -102,18 +100,31 @@ class CameraXEngineImpl @Inject constructor(
 
         val timestamp = System.currentTimeMillis()
         android.util.Log.d("CameraXEngine", "capturePhoto: got imageProxy profile=${profile.id}")
-        val bitmap = imageProxy.use { proxy ->
-            proxy.toBitmap()
+
+        val processed = try {
+            imageProxy.use { proxy ->
+                // Native-first path: try YUV frame processing
+                if (nativeProcessor.isAvailable() && proxy.format == ImageFormat.YUV_420_888) {
+                    android.util.Log.d("CameraXEngine", "capturePhoto: native path profile=${profile.id}")
+                    processNativeYuv(proxy, profile, timestamp)
+                } else {
+                    android.util.Log.d("CameraXEngine", "capturePhoto: Kotlin fallback path profile=${profile.id}")
+                    val bitmap = proxy.toBitmap()
+                    val filter = filterFactory.getFilter(profile.id)
+                    filter.apply(bitmap, profile, timestamp)
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("CameraXEngine", "Native processing failed, falling back to Kotlin path", e)
+            // Re-acquire and fallback via existing Kotlin path
+            imageProxy.use { proxy ->
+                val bitmap = proxy.toBitmap()
+                val filter = filterFactory.getFilter(profile.id)
+                filter.apply(bitmap, profile, timestamp)
+            }
         }
 
-        android.util.Log.d("CameraXEngine", "capturePhoto: converted bitmap profile=${profile.id} size=${bitmap.width}x${bitmap.height}")
-
-        val processed = withContext(Dispatchers.Default) {
-            android.util.Log.d("CameraXEngine", "capturePhoto: post-processing begin profile=${profile.id}")
-            filterFactory.getFilter(profile.id).apply(bitmap, profile, timestamp)
-        }
-
-        android.util.Log.d("CameraXEngine", "capturePhoto: post-processing complete profile=${profile.id} size=${processed.width}x${processed.height}")
+        android.util.Log.d("CameraXEngine", "capturePhoto: processing complete profile=${profile.id} size=${processed.width}x${processed.height}")
 
         val gallerySaver = GallerySaver(context)
         val uri = try {
@@ -129,6 +140,55 @@ class CameraXEngineImpl @Inject constructor(
         android.util.Log.d("CameraXEngine", "capturePhoto: complete profile=${profile.id} uri=$uri")
 
         return CaptureResult(processed, uri, timestamp)
+    }
+
+    /**
+     * Native YUV processing path — zero JPEG decode, direct pixel math.
+     */
+    private suspend fun processNativeYuv(
+        imageProxy: ImageProxy,
+        profile: CameraProfile,
+        timestamp: Long,
+    ): Bitmap {
+        return withContext(Dispatchers.Default) {
+            val yBuffer = imageProxy.planes[0].buffer
+            val uBuffer = imageProxy.planes[1].buffer
+            val vBuffer = imageProxy.planes[2].buffer
+
+            val yBytes = ByteArray(yBuffer.remaining())
+            val uBytes = ByteArray(uBuffer.remaining())
+            val vBytes = ByteArray(vBuffer.remaining())
+
+            yBuffer.get(yBytes)
+            uBuffer.get(uBytes)
+            vBuffer.get(vBytes)
+
+            val outBitmap = Bitmap.createBitmap(
+                imageProxy.width, imageProxy.height,
+                Bitmap.Config.ARGB_8888,
+            )
+
+            val success = nativeProcessor.processYuvFrame(
+                y = yBytes,
+                u = uBytes,
+                v = vBytes,
+                width = imageProxy.width,
+                height = imageProxy.height,
+                yStride = imageProxy.planes[0].rowStride,
+                uStride = imageProxy.planes[1].rowStride,
+                vStride = imageProxy.planes[2].rowStride,
+                uvPixelStride = imageProxy.planes[1].pixelStride,
+                presetId = profile.id,
+                timestamp = timestamp,
+                outBitmap = outBitmap,
+            )
+
+            if (!success) {
+                throw RuntimeException("Native filter returned false for profile=${profile.id}")
+            }
+
+            outBitmap
+        }
     }
 
     override fun switchCamera() {
@@ -200,7 +260,7 @@ class CameraXEngineImpl @Inject constructor(
             val buffer = planes[0].buffer
             val bytes = ByteArray(buffer.remaining())
             buffer.get(bytes)
-            return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            return android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                 ?: throw IllegalStateException("Failed to decode JPEG bitmap")
         }
 
@@ -228,10 +288,10 @@ class CameraXEngineImpl @Inject constructor(
             nv21[chromaOffset++] = uArr[i]
         }
 
-        val yuvImage = YuvImage(nv21, ImageFormat.NV21, width, height, null)
-        val out = ByteArrayOutputStream()
-        yuvImage.compressToJpeg(Rect(0, 0, width, height), 100, out)
-        return BitmapFactory.decodeByteArray(out.toByteArray(), 0, out.size())
+        val yuvImage = android.graphics.YuvImage(nv21, ImageFormat.NV21, width, height, null)
+        val out = java.io.ByteArrayOutputStream()
+        yuvImage.compressToJpeg(android.graphics.Rect(0, 0, width, height), 100, out)
+        return android.graphics.BitmapFactory.decodeByteArray(out.toByteArray(), 0, out.size())
             ?: throw IllegalStateException("Failed to decode YUV bitmap")
     }
 }

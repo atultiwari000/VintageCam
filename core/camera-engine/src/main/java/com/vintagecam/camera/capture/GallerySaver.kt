@@ -7,7 +7,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
-import android.util.Log
 import androidx.annotation.WorkerThread
 import androidx.exifinterface.media.ExifInterface
 import com.vintagecam.profiles.CameraProfile
@@ -42,7 +41,6 @@ internal class GallerySaver(
         val values = ContentValues().apply {
             put(MediaStore.Images.Media.DISPLAY_NAME, fileName)
             put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
-            put(MediaStore.Images.Media.DATE_ADDED, capturedAtMillis / 1000)
             put(MediaStore.Images.Media.DATE_TAKEN, capturedAtMillis)
 
             // RELATIVE_PATH is available from API 29 (Q) onward
@@ -78,34 +76,24 @@ internal class GallerySaver(
                 }
             } ?: throw IOException("Unable to open output stream for $uri")
 
-            // Write EXIF metadata best-effort. Some devices refuse rw descriptors for
-            // MediaStore rows even after the JPEG is written, and that should not
-            // delete the photo.
-            try {
-                resolver.openFileDescriptor(uri, "rw")?.use { descriptor ->
-                    ExifInterface(descriptor.fileDescriptor).apply {
-                        setAttribute(ExifInterface.TAG_DATETIME_ORIGINAL, exifTimestamp(capturedAtMillis))
-                        setAttribute(ExifInterface.TAG_DATETIME, exifTimestamp(capturedAtMillis))
-                        setAttribute(ExifInterface.TAG_MAKE, "VintageCam")
-                        setAttribute(ExifInterface.TAG_MODEL, profile.displayName)
-                        setAttribute(ExifInterface.TAG_IMAGE_DESCRIPTION, profile.id)
-                        saveAttributes()
-                    }
+            // Write EXIF metadata
+            resolver.openFileDescriptor(uri, "rw")?.use { descriptor ->
+                ExifInterface(descriptor.fileDescriptor).apply {
+                    setAttribute(ExifInterface.TAG_DATETIME_ORIGINAL, exifTimestamp(capturedAtMillis))
+                    setAttribute(ExifInterface.TAG_DATETIME, exifTimestamp(capturedAtMillis))
+                    setAttribute(ExifInterface.TAG_MAKE, "VintageCam")
+                    setAttribute(ExifInterface.TAG_MODEL, profile.displayName)
+                    setAttribute(ExifInterface.TAG_IMAGE_DESCRIPTION, profile.id)
+                    saveAttributes()
                 }
-            } catch (e: Throwable) {
-                Log.w("GallerySaver", "EXIF metadata write failed for $uri", e)
             }
 
             // Clear IS_PENDING flag (API 29+) so the system gallery picks it up
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                try {
-                    val updateValues = ContentValues().apply {
-                        put(MediaStore.Images.Media.IS_PENDING, 0)
-                    }
-                    resolver.update(uri, updateValues, null, null)
-                } catch (e: Throwable) {
-                    Log.w("GallerySaver", "Failed to clear IS_PENDING for $uri", e)
+                val updateValues = ContentValues().apply {
+                    put(MediaStore.Images.Media.IS_PENDING, 0)
                 }
+                resolver.update(uri, updateValues, null, null)
             }
         } catch (e: Throwable) {
             // Best-effort cleanup — if the URI was never inserted, this may log a warning
@@ -114,11 +102,10 @@ internal class GallerySaver(
             } catch (_: Throwable) {
                 // Ignore cleanup failures
             }
-            Log.e("GallerySaver", "Failed to save image to MediaStore", e)
             throw e
         }
 
-        Log.d("GallerySaver", "Saved to: $uri")
+        android.util.Log.d("GallerySaver", "Saved to: $uri")
         return uri
     }
 

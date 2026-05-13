@@ -11,13 +11,16 @@ import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
+import com.vintagecam.camera.capture.CapturePostProcessor
 import com.vintagecam.camera.capture.GallerySaver
 import com.vintagecam.camera.filter.FilterFactory
 import com.vintagecam.imageprocessor.NativeImageProcessor
 import com.vintagecam.profiles.CameraProfile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import com.google.common.util.concurrent.ListenableFuture
@@ -55,7 +58,19 @@ class CameraXEngineImpl @Inject constructor(
         withContext(Dispatchers.Main) {
             val provider = ProcessCameraProvider.getInstance(context).await()
             cameraProvider = provider
-            bindInternal(lifecycleOwner, surfaceProvider)
+
+            var retries = 3
+            while (retries > 0) {
+                try {
+                    bindInternal(lifecycleOwner, surfaceProvider)
+                    return@withContext
+                } catch (e: Exception) {
+                    retries--
+                    if (retries == 0) throw e
+                    android.util.Log.w("CameraXEngine", "startPreview: bind failed, ${retries} retries left", e)
+                    delay(300)
+                }
+            }
         }
     }
 
@@ -74,6 +89,7 @@ class CameraXEngineImpl @Inject constructor(
 
         android.util.Log.d("CameraXEngine", "capturePhoto: begin profile=${profile.id}")
 
+        // Capture ImageProxy on main thread
         val imageProxy = withContext(Dispatchers.Main) {
             suspendCancellableCoroutine<ImageProxy> { cont ->
                 try {
@@ -101,31 +117,18 @@ class CameraXEngineImpl @Inject constructor(
         val timestamp = System.currentTimeMillis()
         android.util.Log.d("CameraXEngine", "capturePhoto: got imageProxy profile=${profile.id}")
 
-        val processed = try {
-            imageProxy.use { proxy ->
-                // Native-first path: try YUV frame processing
-                if (nativeProcessor.isAvailable() && proxy.format == ImageFormat.YUV_420_888) {
-                    android.util.Log.d("CameraXEngine", "capturePhoto: native path profile=${profile.id}")
-                    processNativeYuv(proxy, profile, timestamp)
-                } else {
-                    android.util.Log.d("CameraXEngine", "capturePhoto: Kotlin fallback path profile=${profile.id}")
-                    val bitmap = proxy.toBitmap()
-                    val filter = filterFactory.getFilter(profile.id)
-                    filter.apply(bitmap, profile, timestamp)
-                }
-            }
-        } catch (e: Exception) {
-            android.util.Log.e("CameraXEngine", "Native processing failed, falling back to Kotlin path", e)
-            // Re-acquire and fallback via existing Kotlin path
-            imageProxy.use { proxy ->
-                val bitmap = proxy.toBitmap()
-                val filter = filterFactory.getFilter(profile.id)
-                filter.apply(bitmap, profile, timestamp)
-            }
+        // ✅ Safe close with .use() (ImageProxy implements AutoCloseable)
+        val bitmap = imageProxy.use { proxy ->
+            proxy.toBitmap()
         }
 
-        android.util.Log.d("CameraXEngine", "capturePhoto: processing complete profile=${profile.id} size=${processed.width}x${processed.height}")
+        // Apply CPU post-processing off the main thread
+        val postProcessor = CapturePostProcessor()
+        val processed = withContext(Dispatchers.Default) {
+            postProcessor.apply(bitmap, profile, timestamp)
+        }
 
+        // Save to gallery on IO dispatcher
         val gallerySaver = GallerySaver(context)
         val uri = try {
             withContext(Dispatchers.IO) {
@@ -140,55 +143,6 @@ class CameraXEngineImpl @Inject constructor(
         android.util.Log.d("CameraXEngine", "capturePhoto: complete profile=${profile.id} uri=$uri")
 
         return CaptureResult(processed, uri, timestamp)
-    }
-
-    /**
-     * Native YUV processing path — zero JPEG decode, direct pixel math.
-     */
-    private suspend fun processNativeYuv(
-        imageProxy: ImageProxy,
-        profile: CameraProfile,
-        timestamp: Long,
-    ): Bitmap {
-        return withContext(Dispatchers.Default) {
-            val yBuffer = imageProxy.planes[0].buffer
-            val uBuffer = imageProxy.planes[1].buffer
-            val vBuffer = imageProxy.planes[2].buffer
-
-            val yBytes = ByteArray(yBuffer.remaining())
-            val uBytes = ByteArray(uBuffer.remaining())
-            val vBytes = ByteArray(vBuffer.remaining())
-
-            yBuffer.get(yBytes)
-            uBuffer.get(uBytes)
-            vBuffer.get(vBytes)
-
-            val outBitmap = Bitmap.createBitmap(
-                imageProxy.width, imageProxy.height,
-                Bitmap.Config.ARGB_8888,
-            )
-
-            val success = nativeProcessor.processYuvFrame(
-                y = yBytes,
-                u = uBytes,
-                v = vBytes,
-                width = imageProxy.width,
-                height = imageProxy.height,
-                yStride = imageProxy.planes[0].rowStride,
-                uStride = imageProxy.planes[1].rowStride,
-                vStride = imageProxy.planes[2].rowStride,
-                uvPixelStride = imageProxy.planes[1].pixelStride,
-                presetId = profile.id,
-                timestamp = timestamp,
-                outBitmap = outBitmap,
-            )
-
-            if (!success) {
-                throw RuntimeException("Native filter returned false for profile=${profile.id}")
-            }
-
-            outBitmap
-        }
     }
 
     override fun switchCamera() {
@@ -220,7 +174,13 @@ class CameraXEngineImpl @Inject constructor(
     ) {
         val provider = cameraProvider ?: throw IllegalStateException("Camera provider unavailable")
 
-        // CRITICAL FIX: Unbind old use cases before creating new ones
+        // Guard: lifecycle must be at least STARTED before binding camera use cases
+        if (!lifecycleOwner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
+            throw IllegalStateException(
+                "Cannot bind camera: lifecycle is ${lifecycleOwner.lifecycle.currentState}, need STARTED"
+            )
+        }
+
         provider.unbindAll()
 
         preview = Preview.Builder()

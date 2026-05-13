@@ -88,29 +88,11 @@ class PreviewOverlayView @JvmOverloads constructor(
     }
 
     private fun drawColorTint(canvas: Canvas, matrix: FloatArray) {
-        val androidMatrix = toAndroidColorMatrix(matrix)
+        // Profile stores a full 20-element 4x5 ColorMatrix directly.
         paint.reset()
-        paint.colorFilter = ColorMatrixColorFilter(androidMatrix)
+        paint.colorFilter = ColorMatrixColorFilter(ColorMatrix(matrix))
         paint.alpha = 80 // Subtle for preview
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
         paint.colorFilter = null
-    }
-
-    /**
-     * Converts the profile's 3x3 color matrix (9 floats) into a 4x5 Android
-     * ColorMatrix (20 floats) suitable for [ColorMatrixColorFilter].
-     */
-    private fun toAndroidColorMatrix(matrix3x3: FloatArray): ColorMatrix {
-        val m = if (matrix3x3.size >= 9) matrix3x3
-        else floatArrayOf(1f, 0f, 0f, 0f, 1f, 0f, 0f, 0f, 1f)
-
-        return ColorMatrix(
-            floatArrayOf(
-                m[0], m[1], m[2], 0f, 0f,
-                m[3], m[4], m[5], 0f, 0f,
-                m[6], m[7], m[8], 0f, 0f,
-                0f, 0f, 0f, 1f, 0f,
-            ),
-        )
     }
 }

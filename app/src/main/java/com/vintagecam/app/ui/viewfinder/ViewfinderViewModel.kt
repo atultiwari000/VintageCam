@@ -1,6 +1,7 @@
 package com.vintagecam.app.ui.viewfinder
 
 import android.content.Context
+import android.view.View
 import androidx.camera.core.Preview
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
@@ -11,17 +12,21 @@ import com.vintagecam.app.audio.CameraSoundEngine
 import com.vintagecam.camera.CameraEngine
 import com.vintagecam.camera.CaptureResult
 import com.vintagecam.profiles.CameraProfile
-import com.vintagecam.profiles.data.CapturedPhoto
+import com.vintagecam.profiles.data.PhotoStore
+import com.vintagecam.profiles.data.SavedPhoto
 import com.vintagecam.profiles.data.ProfileRepository
 import com.vintagecam.profiles.data.SessionManager
 import dagger.hilt.android.lifecycle.HiltViewModel
 import javax.inject.Inject
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.yield
 
 sealed interface CameraState {
@@ -35,7 +40,7 @@ data class ViewfinderUiState(
     val profiles: List<CameraProfile> = emptyList(),
     val currentProfileIndex: Int = 0,
     val flashEnabled: Boolean = false,
-    val capturedPhotos: List<CapturedPhoto> = emptyList(),
+    val capturedPhotos: List<SavedPhoto> = emptyList(),
 )
 
 @HiltViewModel
@@ -44,6 +49,7 @@ class ViewfinderViewModel @Inject constructor(
     private val cameraEngine: CameraEngine,
     private val cameraSoundEngine: CameraSoundEngine,
     private val sessionManager: SessionManager,
+    private val photoStore: PhotoStore,
     profileRepository: ProfileRepository,
 ) : ViewModel() {
 
@@ -79,6 +85,28 @@ class ViewfinderViewModel @Inject constructor(
     fun bindCamera(lifecycleOwner: LifecycleOwner, previewView: androidx.camera.view.PreviewView) {
         viewModelScope.launch {
             try {
+                // ── Fix: wait for PreviewView to be attached before binding camera ──
+                // Calling startPreview before the view is attached triggers
+                // "Camera is closed" because the surface isn't ready yet.
+                withContext(Dispatchers.Main) {
+                    suspendCancellableCoroutine<Unit> { cont ->
+                        if (previewView.isAttachedToWindow) {
+                            cont.resume(Unit) {}
+                        } else {
+                            val listener = object : View.OnAttachStateChangeListener {
+                                override fun onViewAttachedToWindow(v: View) {
+                                    previewView.removeOnAttachStateChangeListener(this)
+                                    cont.resume(Unit) {}
+                                }
+                                override fun onViewDetachedFromWindow(v: View) {}
+                            }
+                            previewView.addOnAttachStateChangeListener(listener)
+                            cont.invokeOnCancellation {
+                                previewView.removeOnAttachStateChangeListener(listener)
+                            }
+                        }
+                    }
+                }
                 cameraEngine.startPreview(lifecycleOwner, previewView.surfaceProvider)
             } catch (e: Exception) {
                 android.util.Log.e("ViewfinderViewModel", "Failed to bind camera", e)
@@ -116,71 +144,42 @@ class ViewfinderViewModel @Inject constructor(
             val profile = profiles.getOrNull(_uiState.value.currentProfileIndex) ?: return@launch
 
             try {
-                android.util.Log.d(
-                    "ViewfinderViewModel",
-                    "onCapture: start profile=${profile.id} state=${_uiState.value.cameraState}",
-                )
+                android.util.Log.d("ViewfinderViewModel", "onCapture: start profile=${profile.id}")
+
                 _uiState.update { it.copy(cameraState = CameraState.Capturing) }
                 cameraSoundEngine.playShutter(profile)
                 delay(profile.captureLatencyMs)
                 _uiState.update { it.copy(cameraState = CameraState.Processing) }
                 val processingStartedAt = SystemClock.elapsedRealtime()
 
-                android.util.Log.d(
-                    "ViewfinderViewModel",
-                    "onCapture: processing started profile=${profile.id}",
-                )
-
                 val result: CaptureResult = cameraEngine.capturePhoto(profile)
 
-                android.util.Log.d(
-                    "ViewfinderViewModel",
-                    "onCapture: capturePhoto returned profile=${profile.id} uri=${result.uri}",
-                )
+                android.util.Log.d("ViewfinderViewModel", "onCapture: capturePhoto returned profile=${profile.id}")
 
-                val capturedPhoto = CapturedPhoto(
-                    bitmap = result.bitmap,
-                    profile = profile,
-                    timestampMillis = result.capturedAtMillis,
-                    uri = result.uri,
-                )
+                val savedPhoto = withContext(Dispatchers.IO) {
+                    photoStore.save(
+                        bitmap = result.bitmap,
+                        profileId = profile.id,
+                        profileName = profile.displayName,
+                        timestamp = result.capturedAtMillis,
+                    )
+                }
 
-                sessionManager.addCapturedPhoto(capturedPhoto)
+                android.util.Log.d("ViewfinderViewModel", "onCapture: saved id=${savedPhoto.id}")
 
-                android.util.Log.d(
-                    "ViewfinderViewModel",
-                    "onCapture: added to session roll profile=${profile.id}",
-                )
+                sessionManager.addCapturedPhoto(savedPhoto)
 
                 val processingElapsedMs = SystemClock.elapsedRealtime() - processingStartedAt
-                val remainingDevelopmentMs = MIN_DEVELOPMENT_WINDOW_MS - processingElapsedMs
-                if (remainingDevelopmentMs > 0) {
-                    android.util.Log.d(
-                        "ViewfinderViewModel",
-                        "onCapture: holding processing for ${remainingDevelopmentMs}ms profile=${profile.id}",
-                    )
-                    delay(remainingDevelopmentMs)
+                val remainingMs = MIN_DEVELOPMENT_WINDOW_MS - processingElapsedMs
+                if (remainingMs > 0) {
+                    delay(remainingMs)
                 } else {
-                    android.util.Log.d(
-                        "ViewfinderViewModel",
-                        "onCapture: development window already satisfied profile=${profile.id}",
-                    )
                     yield()
                 }
 
-                _uiState.update { state ->
-                    state.copy(cameraState = CameraState.Previewing)
-                }
+                _uiState.update { it.copy(cameraState = CameraState.Previewing) }
 
-                android.util.Log.d(
-                    "ViewfinderViewModel",
-                    "onCapture: returned to preview profile=${profile.id}",
-                )
-
-                android.util.Log.d(
-                    "ViewfinderViewModel",
-                    "Capture complete: profile=${profile.id} uri=${result.uri}",
-                )
+                android.util.Log.d("ViewfinderViewModel", "onCapture: complete profile=${profile.id}")
             } catch (e: Throwable) {
                 android.util.Log.e("ViewfinderViewModel", "Capture failed", e)
                 _uiState.update { it.copy(cameraState = CameraState.Previewing) }

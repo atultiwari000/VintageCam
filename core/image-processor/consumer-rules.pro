@@ -1,5 +1,4 @@
 # Keep JNI methods
--keep class com.vintagecam.native.NativeImageProcessor {
+-keep class com.vintagecam.imageprocessor.NativeImageProcessor {
     native <methods>;
-    static <methods>;
 }

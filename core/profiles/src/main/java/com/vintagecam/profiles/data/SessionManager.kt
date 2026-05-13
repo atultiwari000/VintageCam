@@ -1,5 +1,7 @@
 package com.vintagecam.profiles.data
 
+import android.util.Log
+import com.vintagecam.profiles.data.PhotoStore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -8,47 +10,54 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Tracks captured photos for the current camera session.
+ * Tracks captured photos for the current session.
  *
- * Exposes a [StateFlow] so UI layers can observe changes reactively
- * instead of polling with snapshots. All mutations are thread-safe
- * via [MutableStateFlow.update] (atomic CAS).
+ * On init, loads ALL previously-saved photos from [PhotoStore] so the
+ * film roll survives process death. New captures are persisted immediately.
+ *
+ * Exposes a [StateFlow] so UI layers can observe changes reactively.
  */
 @Singleton
-class SessionManager @Inject constructor() {
+class SessionManager @Inject constructor(
+    private val photoStore: PhotoStore,
+) {
+    private val _capturedPhotos = MutableStateFlow<List<SavedPhoto>>(emptyList())
 
-    private val _capturedPhotos = MutableStateFlow<List<CapturedPhoto>>(emptyList())
+    /** Observable stream of all captured photos. Survives process death. */
+    val capturedPhotos: StateFlow<List<SavedPhoto>> = _capturedPhotos.asStateFlow()
 
-    /**
-     * Observable stream of all photos captured in this session.
-     * Collect from this in ViewModels or Composables.
-     */
-    val capturedPhotos: StateFlow<List<CapturedPhoto>> = _capturedPhotos.asStateFlow()
-
-    /**
-     * Add a photo to the current session roll.
-     * Immediately visible to all collectors of [capturedPhotos].
-     */
-    fun addCapturedPhoto(photo: CapturedPhoto) {
-        _capturedPhotos.update { listOf(photo) + it }
-        android.util.Log.d(
-            "SessionManager",
-            "addCapturedPhoto: ${photo.profile.id} — roll size now ${_capturedPhotos.value.size}",
-        )
+    init {
+        val existing = photoStore.loadAll()
+        if (existing.isNotEmpty()) {
+            _capturedPhotos.value = existing
+            Log.d("SessionManager", "Restored ${existing.size} photos from disk")
+        }
     }
 
-    /**
-     * Clear all photos from the current session.
-     */
+    /** Add a photo to the session roll. Photo is already persisted by caller. */
+    fun addCapturedPhoto(photo: SavedPhoto) {
+        _capturedPhotos.update { listOf(photo) + it }
+        Log.d("SessionManager", "addCapturedPhoto: ${photo.id} — roll size ${_capturedPhotos.value.size}")
+    }
+
+    /** Delete a photo from the roll and from disk. */
+    fun deletePhoto(id: String): Boolean {
+        val deleted = photoStore.delete(id)
+        if (deleted) {
+            _capturedPhotos.update { current -> current.filter { it.id != id } }
+            Log.d("SessionManager", "deletePhoto: $id — roll size ${_capturedPhotos.value.size}")
+        }
+        return deleted
+    }
+
+    /** Clear all photos from memory (does not delete files). */
     fun clearCurrentRoll() {
         _capturedPhotos.value = emptyList()
-        android.util.Log.d("SessionManager", "clearCurrentRoll: roll cleared")
     }
 
-    /**
-     * Convenience accessor for call-sites that need a snapshot.
-     *
-     * Prefer collecting [capturedPhotos] instead.
-     */
-    fun getCurrentRollPhotos(): List<CapturedPhoto> = _capturedPhotos.value
+    /** Convenience snapshot. Prefer collecting [capturedPhotos]. */
+    fun getCurrentRollPhotos(): List<SavedPhoto> = _capturedPhotos.value
+
+    /** Number of photos in the roll. */
+    fun photoCount(): Int = _capturedPhotos.value.size
 }

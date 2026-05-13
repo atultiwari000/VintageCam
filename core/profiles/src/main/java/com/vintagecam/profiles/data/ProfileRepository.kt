@@ -19,9 +19,15 @@ class ProfileRepository @Inject constructor() {
             displayName = "VHS-C 1985",
             era = Era.EIGHTIES,
             colorMatrix = floatArrayOf(
-                1.25f, -0.10f, -0.15f,
-                -0.15f, 1.35f, -0.20f,
-                0.05f, -0.25f, 1.20f
+                // 4x5 Android ColorMatrix — R' = a*R + b*G + c*B + d*A + e
+                // Row 0 (R output): Rr, Rg, Rb, Ra, Ro
+                1.25f, -0.10f, -0.15f, 0f, 0f,
+                // Row 1 (G output): Gr, Gg, Gb, Ga, Go
+                -0.15f, 1.35f, -0.20f, 0f, 0f,
+                // Row 2 (B output): Br, Bg, Bb, Ba, Bo
+                0.05f, -0.25f, 1.20f, 0f, 0f,
+                // Row 3 (A output): Ar, Ag, Ab, Aa, Ao
+                0f, 0f, 0f, 1f, 0f,
             ),
             vignetteStrength = 0.45f,
             grainIntensity = 0.30f,
@@ -37,9 +43,11 @@ class ProfileRepository @Inject constructor() {
             displayName = "FunSaver '98",
             era = Era.NINETIES,
             colorMatrix = floatArrayOf(
-                1.30f, -0.15f, -0.15f,
-                -0.20f, 1.45f, -0.25f,
-                -0.10f, -0.30f, 1.40f
+                // 4x5 Android ColorMatrix
+                1.30f, -0.15f, -0.15f, 0f, 0f,
+                -0.20f, 1.45f, -0.25f, 0f, 0f,
+                -0.10f, -0.30f, 1.40f, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f,
             ),
             vignetteStrength = 0.65f,
             grainIntensity = 0.45f,
@@ -56,9 +64,11 @@ class ProfileRepository @Inject constructor() {
             displayName = "CyberShot 2003",
             era = Era.TWO_THOUSANDS,
             colorMatrix = floatArrayOf(
-                1.40f, -0.15f, -0.15f,
-                -0.25f, 1.50f, -0.25f,
-                -0.10f, -0.20f, 1.30f
+                // 4x5 Android ColorMatrix
+                1.40f, -0.15f, -0.15f, 0f, 0f,
+                -0.25f, 1.50f, -0.25f, 0f, 0f,
+                -0.10f, -0.20f, 1.30f, 0f, 0f,
+                0f, 0f, 0f, 1f, 0f,
             ),
             vignetteStrength = 0.20f,
             grainIntensity = 0.15f,

@@ -1,2 +1,2 @@
 # Add project specific ProGuard rules here.
--keep class com.vintagecam.native.** { *; }
+-keep class com.vintagecam.imageprocessor.** { *; }

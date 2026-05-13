@@ -13,7 +13,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import androidx.core.content.ContextCompat
-import com.vintagecam.app.ui.gallery.FilmRollScreen
+import com.vintagecam.app.ui.gallery.GalleryScreen
 import com.vintagecam.app.ui.viewfinder.ViewfinderScreen
 import com.vintagecam.app.ui.viewfinder.ViewfinderViewModel
 import com.vintagecam.app.ui.theme.VintageCamTheme
@@ -59,12 +59,11 @@ class MainActivity : ComponentActivity() {
                         composable("viewfinder") {
                             ViewfinderScreen(
                                 viewModel = viewModel,
-                                onOpenFilmRoll = { navController.navigate("filmroll") },
+                                onOpenFilmRoll = { navController.navigate("gallery") },
                             )
                         }
-                        composable("filmroll") {
-                            FilmRollScreen(
-                                photos = uiState.capturedPhotos,
+                        composable("gallery") {
+                            GalleryScreen(
                                 onClose = { navController.popBackStack() },
                             )
                         }

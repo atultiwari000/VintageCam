@@ -26,7 +26,7 @@ class CpuFilterApplier @Inject constructor() : ShaderPipeline {
         val mutableBitmap = input.copy(Bitmap.Config.ARGB_8888, true)
         val canvas = Canvas(mutableBitmap)
         val colorPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-            colorFilter = ColorMatrixColorFilter(toAndroidColorMatrix(profile.colorMatrix))
+            colorFilter = ColorMatrixColorFilter(ColorMatrix(profile.colorMatrix))
         }
 
         val colorAdjusted = Bitmap.createBitmap(input.width, input.height, Bitmap.Config.ARGB_8888)
@@ -37,23 +37,6 @@ class CpuFilterApplier @Inject constructor() : ShaderPipeline {
         applyRadialVignette(canvas, mutableBitmap.width, mutableBitmap.height, profile.vignetteStrength)
 
         return mutableBitmap
-    }
-
-    private fun toAndroidColorMatrix(matrix3x3: FloatArray): ColorMatrix {
-        val m = if (matrix3x3.size >= 9) matrix3x3 else floatArrayOf(
-            1f, 0f, 0f,
-            0f, 1f, 0f,
-            0f, 0f, 1f,
-        )
-
-        return ColorMatrix(
-            floatArrayOf(
-                m[0], m[1], m[2], 0f, 0f,
-                m[3], m[4], m[5], 0f, 0f,
-                m[6], m[7], m[8], 0f, 0f,
-                0f, 0f, 0f, 1f, 0f,
-            ),
-        )
     }
 
     private fun applyRadialVignette(canvas: Canvas, width: Int, height: Int, strength: Float) {

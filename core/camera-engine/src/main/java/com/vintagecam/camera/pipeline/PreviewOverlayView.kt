@@ -100,39 +100,11 @@ class PreviewOverlayView @JvmOverloads constructor(
     }
 
     private fun drawColorTint(canvas: Canvas, matrix: FloatArray) {
-        // The profile's colorMatrix is a 9-element 3x3 matrix
-        // Skip if it's a zero matrix
-        if (matrix.size < 9 || matrix.all { it == 0f }) {
-            return
-        }
+        // Profile stores a full 20-element 4x5 ColorMatrix directly.
+        // Skip if it's a zero/identity matrix (all zeros except diagonal = 1).
+        if (matrix.size < 20) return
 
-        // Build a 20-element ColorMatrix from the 9-element 3x3 matrix
-        // ColorMatrix layout: [a, b, c, d, e, f, g, h, i, j, ...]
-        // where a-i are the 3x3 color component matrix
-        val colorMatrix = FloatArray(20).apply {
-            // Identity matrix as base
-            this[0] = 1f   // R output from R
-            this[6] = 1f   // G output from G
-            this[12] = 1f  // B output from B
-            this[18] = 1f  // A output from A
-            
-            // Apply 60% reduced intensity for preview subtlety
-            val scale = 0.4f
-            
-            // Apply the 3x3 color matrix (9 elements) with reduced intensity
-            // matrix layout: [r*r, r*g, r*b, g*r, g*g, g*b, b*r, b*g, b*b]
-            this[0] = 0.6f + scale * matrix[0]   // Red from Red
-            this[1] = scale * matrix[1]           // Red from Green  
-            this[2] = scale * matrix[2]           // Red from Blue
-            this[5] = scale * matrix[3]           // Green from Red
-            this[6] = 0.6f + scale * matrix[4]   // Green from Green
-            this[7] = scale * matrix[5]           // Green from Blue
-            this[10] = scale * matrix[6]          // Blue from Red
-            this[11] = scale * matrix[7]          // Blue from Green
-            this[12] = 0.6f + scale * matrix[8]  // Blue from Blue
-        }
-
-        paint.colorFilter = ColorMatrixColorFilter(colorMatrix)
+        paint.colorFilter = ColorMatrixColorFilter(ColorMatrix(matrix))
         paint.alpha = 100 // Subtle overlay (100/255 ≈ 39% opacity)
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
         paint.colorFilter = null

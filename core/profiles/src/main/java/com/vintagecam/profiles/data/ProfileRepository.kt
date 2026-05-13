@@ -48,7 +48,8 @@ class ProfileRepository @Inject constructor() {
             captureLatencyMs = 80L,
             shaderPipeline = listOf(ShaderType.COLOR_MATRIX, ShaderType.VIGNETTE, ShaderType.GRAIN),
             dateStampStyle = DateStampStyle.YELLOW_CLASSIC,
-            crushedBlacks = 0.08f
+            crushedBlacks = 0.08f,
+            interlacedPreview = true
         ),
         CameraProfile(
             id = "digicam_2003",

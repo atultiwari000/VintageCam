@@ -21,6 +21,8 @@ data class CameraProfile(
 	val crushedBlacks: Float = 0f,
 	val shadowNoiseIntensity: Float = 0f,
 	val interlacedPreview: Boolean = false,
+	val previewVignetteAlpha: Int = 100,
+	val previewGrainIntensity: Float = 0.15f,
 ) : Parcelable
 
 enum class Era {

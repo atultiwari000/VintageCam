@@ -5,6 +5,7 @@ import androidx.camera.core.Preview
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import android.os.SystemClock
 import dagger.hilt.android.qualifiers.ApplicationContext
 import com.vintagecam.app.audio.CameraSoundEngine
 import com.vintagecam.camera.CameraEngine
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.yield
 
 sealed interface CameraState {
     data object Previewing : CameraState
@@ -45,6 +47,10 @@ class ViewfinderViewModel @Inject constructor(
     profileRepository: ProfileRepository,
 ) : ViewModel() {
 
+    private companion object {
+        private const val MIN_DEVELOPMENT_WINDOW_MS = 1800L
+    }
+
     private val profiles: List<CameraProfile> = profileRepository.getProfiles()
 
     private val _uiState = MutableStateFlow(
@@ -60,6 +66,14 @@ class ViewfinderViewModel @Inject constructor(
         viewModelScope.launch {
             cameraSoundEngine.preload(appContext, profiles)
         }
+
+        viewModelScope.launch {
+            sessionManager.capturedPhotos.collect { photos ->
+                _uiState.update { current ->
+                    current.copy(capturedPhotos = photos)
+                }
+            }
+        }
     }
 
     fun bindCamera(lifecycleOwner: LifecycleOwner, previewView: androidx.camera.view.PreviewView) {
@@ -73,6 +87,7 @@ class ViewfinderViewModel @Inject constructor(
     }
 
     fun onStopPreview() {
+        android.util.Log.d("ViewfinderViewModel", "onStopPreview: stopping camera preview")
         cameraEngine.stopPreview()
     }
 
@@ -101,12 +116,27 @@ class ViewfinderViewModel @Inject constructor(
             val profile = profiles.getOrNull(_uiState.value.currentProfileIndex) ?: return@launch
 
             try {
+                android.util.Log.d(
+                    "ViewfinderViewModel",
+                    "onCapture: start profile=${profile.id} state=${_uiState.value.cameraState}",
+                )
                 _uiState.update { it.copy(cameraState = CameraState.Capturing) }
                 cameraSoundEngine.playShutter(profile)
                 delay(profile.captureLatencyMs)
                 _uiState.update { it.copy(cameraState = CameraState.Processing) }
+                val processingStartedAt = SystemClock.elapsedRealtime()
+
+                android.util.Log.d(
+                    "ViewfinderViewModel",
+                    "onCapture: processing started profile=${profile.id}",
+                )
 
                 val result: CaptureResult = cameraEngine.capturePhoto(profile)
+
+                android.util.Log.d(
+                    "ViewfinderViewModel",
+                    "onCapture: capturePhoto returned profile=${profile.id} uri=${result.uri}",
+                )
 
                 val capturedPhoto = CapturedPhoto(
                     bitmap = result.bitmap,
@@ -117,15 +147,35 @@ class ViewfinderViewModel @Inject constructor(
 
                 sessionManager.addCapturedPhoto(capturedPhoto)
 
-                // FIX: Read from SessionManager to get correct (newest-first) order
-                val updatedPhotos = sessionManager.getCurrentRollPhotos()
+                android.util.Log.d(
+                    "ViewfinderViewModel",
+                    "onCapture: added to session roll profile=${profile.id}",
+                )
+
+                val processingElapsedMs = SystemClock.elapsedRealtime() - processingStartedAt
+                val remainingDevelopmentMs = MIN_DEVELOPMENT_WINDOW_MS - processingElapsedMs
+                if (remainingDevelopmentMs > 0) {
+                    android.util.Log.d(
+                        "ViewfinderViewModel",
+                        "onCapture: holding processing for ${remainingDevelopmentMs}ms profile=${profile.id}",
+                    )
+                    delay(remainingDevelopmentMs)
+                } else {
+                    android.util.Log.d(
+                        "ViewfinderViewModel",
+                        "onCapture: development window already satisfied profile=${profile.id}",
+                    )
+                    yield()
+                }
 
                 _uiState.update { state ->
-                    state.copy(
-                        cameraState = CameraState.Previewing,
-                        capturedPhotos = updatedPhotos,
-                    )
+                    state.copy(cameraState = CameraState.Previewing)
                 }
+
+                android.util.Log.d(
+                    "ViewfinderViewModel",
+                    "onCapture: returned to preview profile=${profile.id}",
+                )
 
                 android.util.Log.d(
                     "ViewfinderViewModel",

@@ -1,8 +1,6 @@
 package com.vintagecam.camera
 
 import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.ImageFormat
 import android.net.Uri
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
@@ -12,11 +10,10 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
-import com.vintagecam.camera.capture.CapturePostProcessor
 import com.vintagecam.camera.capture.GallerySaver
-import com.vintagecam.camera.filter.FilterFactory
-import com.vintagecam.imageprocessor.NativeImageProcessor
+import com.vintagecam.camera.capture.NativeFilterProcessor
 import com.vintagecam.profiles.CameraProfile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -32,8 +29,7 @@ import kotlin.coroutines.resumeWithException
 @Singleton
 class CameraXEngineImpl @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val filterFactory: FilterFactory,
-    private val nativeProcessor: NativeImageProcessor,
+    private val captureProcessor: NativeFilterProcessor,
 ) : CameraEngine {
 
     private var cameraProvider: ProcessCameraProvider? = null
@@ -62,6 +58,7 @@ class CameraXEngineImpl @Inject constructor(
             var retries = 3
             while (retries > 0) {
                 try {
+                    lifecycleOwner.lifecycle.awaitStarted()
                     bindInternal(lifecycleOwner, surfaceProvider)
                     return@withContext
                 } catch (e: Exception) {
@@ -99,7 +96,7 @@ class CameraXEngineImpl @Inject constructor(
                         object : ImageCapture.OnImageCapturedCallback() {
                             override fun onCaptureSuccess(image: ImageProxy) {
                                 android.util.Log.d("CameraXEngine", "capturePhoto: onCaptureSuccess profile=${profile.id}")
-                                cont.resume(image) {}
+                                cont.resume(image)
                             }
                             override fun onError(exception: ImageCaptureException) {
                                 android.util.Log.e("CameraXEngine", "capturePhoto: onError profile=${profile.id}", exception)
@@ -117,15 +114,11 @@ class CameraXEngineImpl @Inject constructor(
         val timestamp = System.currentTimeMillis()
         android.util.Log.d("CameraXEngine", "capturePhoto: got imageProxy profile=${profile.id}")
 
-        // ✅ Safe close with .use() (ImageProxy implements AutoCloseable)
-        val bitmap = imageProxy.use { proxy ->
-            proxy.toBitmap()
-        }
-
-        // Apply CPU post-processing off the main thread
-        val postProcessor = CapturePostProcessor()
+        // Process off the main thread and always close ImageProxy afterward.
         val processed = withContext(Dispatchers.Default) {
-            postProcessor.apply(bitmap, profile, timestamp)
+            imageProxy.use { proxy ->
+                captureProcessor.process(proxy, profile, timestamp)
+            }
         }
 
         // Save to gallery on IO dispatcher
@@ -203,7 +196,7 @@ class CameraXEngineImpl @Inject constructor(
         try {
             addListener({
                 try {
-                    cont.resume(get()) {}
+                    cont.resume(get())
                 } catch (e: Exception) {
                     cont.resumeWithException(e)
                 }
@@ -213,45 +206,34 @@ class CameraXEngineImpl @Inject constructor(
         }
     }
 
-    private fun ImageProxy.toBitmap(): Bitmap {
-        val format = this.format
-
-        if (format == ImageFormat.JPEG) {
-            val buffer = planes[0].buffer
-            val bytes = ByteArray(buffer.remaining())
-            buffer.get(bytes)
-            return android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                ?: throw IllegalStateException("Failed to decode JPEG bitmap")
+    private suspend fun Lifecycle.awaitStarted() {
+        if (currentState.isAtLeast(Lifecycle.State.STARTED)) return
+        if (currentState == Lifecycle.State.DESTROYED) {
+            throw IllegalStateException("Cannot start camera: lifecycle is destroyed")
         }
 
-        if (format != ImageFormat.YUV_420_888) {
-            android.util.Log.w("CameraXEngine", "Unexpected format: $format — trying YUV fallback")
+        val lifecycle = this
+        suspendCancellableCoroutine<Unit> { cont ->
+            lateinit var observer: LifecycleEventObserver
+            observer = LifecycleEventObserver { _, event ->
+                when {
+                    lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) -> {
+                        lifecycle.removeObserver(observer)
+                        cont.resume(Unit)
+                    }
+                    event == Lifecycle.Event.ON_DESTROY -> {
+                        lifecycle.removeObserver(observer)
+                        cont.resumeWithException(
+                            IllegalStateException("Cannot start camera: lifecycle was destroyed"),
+                        )
+                    }
+                }
+            }
+
+            lifecycle.addObserver(observer)
+            cont.invokeOnCancellation {
+                lifecycle.removeObserver(observer)
+            }
         }
-
-        val yBuffer = planes[0].buffer
-        val uBuffer = planes[1].buffer
-        val vBuffer = planes[2].buffer
-        val ySize = yBuffer.remaining()
-        val uvSize = uBuffer.remaining()
-
-        val nv21 = ByteArray(ySize + 2 * uvSize)
-        yBuffer.get(nv21, 0, ySize)
-
-        val vArr = ByteArray(uvSize)
-        val uArr = ByteArray(uvSize)
-        vBuffer.get(vArr)
-        uBuffer.get(uArr)
-
-        var chromaOffset = ySize
-        for (i in 0 until uvSize) {
-            nv21[chromaOffset++] = vArr[i]
-            nv21[chromaOffset++] = uArr[i]
-        }
-
-        val yuvImage = android.graphics.YuvImage(nv21, ImageFormat.NV21, width, height, null)
-        val out = java.io.ByteArrayOutputStream()
-        yuvImage.compressToJpeg(android.graphics.Rect(0, 0, width, height), 100, out)
-        return android.graphics.BitmapFactory.decodeByteArray(out.toByteArray(), 0, out.size())
-            ?: throw IllegalStateException("Failed to decode YUV bitmap")
     }
 }

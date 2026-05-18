@@ -132,9 +132,9 @@ private fun CaptureButton(
                     },
                 )
             }
-            .pointerInput(onSwipeUp) {
+            .pointerInput(enabled, onSwipeUp) {
                 detectVerticalDragGestures { _, dragAmount ->
-                    if (dragAmount < -20f) {
+                    if (enabled && dragAmount < -20f) {
                         onSwipeUp()
                     }
                 }

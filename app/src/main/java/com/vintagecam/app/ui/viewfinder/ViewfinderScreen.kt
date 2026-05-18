@@ -21,6 +21,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -106,42 +107,48 @@ private fun ViewfinderContent(
     onBindCamera: (androidx.lifecycle.LifecycleOwner, androidx.camera.view.PreviewView) -> Unit,
 ) {
     val currentProfile = uiState.profiles.getOrNull(uiState.currentProfileIndex)
+    val context = LocalContext.current
+    val previewViews = remember(context) {
+        val previewView = PreviewView(context).apply {
+            scaleType = PreviewView.ScaleType.FILL_START
+        }
+        val overlayView = PreviewOverlayView(context).apply {
+            setLayerType(ViewGroup.LAYER_TYPE_HARDWARE, null)
+        }
+        val root = FrameLayout(context).apply {
+            addView(previewView, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ))
+            addView(overlayView, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+            ))
+        }
+
+        PreviewViews(
+            root = root,
+            preview = previewView,
+            overlay = overlayView,
+        )
+    }
+
+    LaunchedEffect(lifecycleOwner, previewViews.preview) {
+        onBindCamera(lifecycleOwner, previewViews.preview)
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // ── Full-screen camera preview ──
         // Single FrameLayout holds both CameraX PreviewView (bottom) and
         // PreviewOverlayView (top) so effects render LIVE on the preview.
         AndroidView(
-            factory = { ctx ->
-                FrameLayout(ctx).apply {
-                    val pv = PreviewView(ctx).apply {
-                        scaleType = PreviewView.ScaleType.FILL_START
-                    }
-                    addView(pv, FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                    ))
-
-                    val overlay = PreviewOverlayView(ctx).apply {
-                        setLayerType(ViewGroup.LAYER_TYPE_HARDWARE, null)
-                    }
-                    addView(overlay, FrameLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                        ViewGroup.LayoutParams.MATCH_PARENT,
-                    ))
-
-                    tag = Pair(pv, overlay)
-                }
+            factory = {
+                (previewViews.root.parent as? ViewGroup)?.removeView(previewViews.root)
+                previewViews.root
             },
             modifier = Modifier.fillMaxSize(),
-            update = { frameLayout ->
-                val pair = @Suppress("UNCHECKED_CAST")
-                (frameLayout.tag as? Pair<PreviewView, PreviewOverlayView>)
-                if (pair != null) {
-                    val (pv, overlay) = pair
-                    onBindCamera(lifecycleOwner, pv)
-                    currentProfile?.let { overlay.setProfile(it) }
-                }
+            update = {
+                currentProfile?.let { previewViews.overlay.setProfile(it) }
             },
         )
 
@@ -153,6 +160,7 @@ private fun ViewfinderContent(
         // ── Top controls ──
         TopControlsRow(
             flashEnabled = uiState.flashEnabled,
+            controlsEnabled = uiState.cameraState == CameraState.Previewing,
             onToggleFlash = onToggleFlash,
             onSwitchCamera = onSwitchCamera,
             onGalleryClick = onGalleryClick,
@@ -191,3 +199,9 @@ private fun ViewfinderContent(
         }
     }
 }
+
+private data class PreviewViews(
+    val root: FrameLayout,
+    val preview: PreviewView,
+    val overlay: PreviewOverlayView,
+)

@@ -19,40 +19,52 @@ import androidx.compose.ui.unit.dp
 @Composable
 internal fun TopControlsRow(
     flashEnabled: Boolean,
+    controlsEnabled: Boolean,
     onToggleFlash: () -> Unit,
     onSwitchCamera: () -> Unit,
     onGalleryClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val tint = Color.White.copy(alpha = if (controlsEnabled) 0.8f else 0.3f)
+
     Row(
         modifier = modifier,
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onToggleFlash) {
+        IconButton(
+            onClick = onToggleFlash,
+            enabled = controlsEnabled,
+        ) {
             Icon(
                 imageVector = if (flashEnabled) Icons.Filled.FlashOn else Icons.Filled.FlashOff,
                 contentDescription = if (flashEnabled) "Turn flash off" else "Turn flash on",
-                tint = Color.White.copy(alpha = 0.8f),
+                tint = tint,
                 modifier = Modifier.size(24.dp),
             )
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            IconButton(onClick = onSwitchCamera) {
+            IconButton(
+                onClick = onSwitchCamera,
+                enabled = controlsEnabled,
+            ) {
                 Icon(
                     imageVector = Icons.Filled.SwitchCamera,
                     contentDescription = "Switch camera",
-                    tint = Color.White.copy(alpha = 0.8f),
+                    tint = tint,
                     modifier = Modifier.size(24.dp),
                 )
             }
 
-            IconButton(onClick = onGalleryClick) {
+            IconButton(
+                onClick = onGalleryClick,
+                enabled = controlsEnabled,
+            ) {
                 Icon(
                     imageVector = Icons.Filled.PhotoLibrary,
                     contentDescription = "Open gallery",
-                    tint = Color.White.copy(alpha = 0.8f),
+                    tint = tint,
                     modifier = Modifier.size(24.dp),
                 )
             }

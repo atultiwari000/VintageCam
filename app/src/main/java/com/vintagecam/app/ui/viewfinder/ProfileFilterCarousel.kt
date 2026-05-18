@@ -52,6 +52,8 @@ import kotlinx.coroutines.launch
 internal fun ProfileFilterCarousel(
     profiles: List<CameraProfile>,
     selectedIndex: Int,
+    expanded: Boolean,
+    onExpandedChange: (Boolean) -> Unit,
     onProfileSelected: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -59,15 +61,28 @@ internal fun ProfileFilterCarousel(
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(selectedIndex) {
-        listState.animateScrollToItem(selectedIndex)
+        if (expanded) {
+            listState.animateScrollToItem(selectedIndex)
+        }
+    }
+
+    if (!expanded) {
+        CompactFilterDock(
+            profiles = profiles,
+            selectedIndex = selectedIndex,
+            onExpand = { onExpandedChange(true) },
+            onProfileSelected = onProfileSelected,
+            modifier = modifier,
+        )
+        return
     }
 
     LazyRow(
         state = listState,
         modifier = modifier
-            .height(92.dp)
-            .background(Color.Black.copy(alpha = 0.58f)),
-        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 10.dp),
+            .height(126.dp)
+            .background(Color.Black.copy(alpha = 0.42f)),
+        contentPadding = PaddingValues(horizontal = 18.dp, vertical = 12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         userScrollEnabled = true,
     ) {
@@ -83,6 +98,113 @@ internal fun ProfileFilterCarousel(
             )
         }
     }
+}
+
+@Composable
+private fun CompactFilterDock(
+    profiles: List<CameraProfile>,
+    selectedIndex: Int,
+    onExpand: () -> Unit,
+    onProfileSelected: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    if (profiles.isEmpty()) return
+
+    val selected = profiles[selectedIndex.coerceIn(profiles.indices)]
+    val previousIndex = if (selectedIndex <= 0) profiles.lastIndex else selectedIndex - 1
+    val nextIndex = if (selectedIndex >= profiles.lastIndex) 0 else selectedIndex + 1
+
+    Row(
+        modifier = modifier
+            .height(58.dp)
+            .padding(horizontal = 18.dp),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        CompactSideChip(
+            text = shortName(profiles[previousIndex]),
+            profile = profiles[previousIndex],
+            onClick = { onProfileSelected(previousIndex) },
+        )
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        Row(
+            modifier = Modifier
+                .width(184.dp)
+                .height(50.dp)
+                .clip(RoundedCornerShape(25.dp))
+                .background(Color.Black.copy(alpha = 0.46f))
+                .border(1.dp, Color.White.copy(alpha = 0.22f), RoundedCornerShape(25.dp))
+                .clickable(onClick = onExpand)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.Center,
+        ) {
+            Box(modifier = Modifier.size(32.dp), contentAlignment = Alignment.Center) {
+                ProfileEraIndicator(selected, isSelected = true)
+            }
+
+            Spacer(modifier = Modifier.width(8.dp))
+
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Text(
+                    text = shortName(selected),
+                    color = Color.White,
+                    fontSize = 11.sp,
+                    fontFamily = FontFamily.Monospace,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    text = selected.deviceLabel.uppercase(),
+                    color = Color.White.copy(alpha = 0.55f),
+                    fontSize = 7.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.width(8.dp))
+
+        CompactSideChip(
+            text = shortName(profiles[nextIndex]),
+            profile = profiles[nextIndex],
+            onClick = { onProfileSelected(nextIndex) },
+        )
+    }
+}
+
+@Composable
+private fun CompactSideChip(
+    text: String,
+    profile: CameraProfile,
+    onClick: () -> Unit,
+) {
+    Text(
+        text = text,
+        color = profileAccent(profile).copy(alpha = 0.82f),
+        fontSize = 8.sp,
+        fontFamily = FontFamily.Monospace,
+        fontWeight = FontWeight.Bold,
+        textAlign = TextAlign.Center,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        modifier = Modifier
+            .width(68.dp)
+            .height(36.dp)
+            .clip(RoundedCornerShape(18.dp))
+            .background(Color.Black.copy(alpha = 0.24f))
+            .border(1.dp, Color.White.copy(alpha = 0.10f), RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 7.dp, vertical = 12.dp),
+    )
 }
 
 @Composable
@@ -113,7 +235,7 @@ private fun FilterCarouselItem(
 
     Column(
         modifier = Modifier
-            .width(116.dp)
+            .width(126.dp)
             .fillMaxHeight()
             .scale(scale)
             .clip(RoundedCornerShape(8.dp))
@@ -126,16 +248,14 @@ private fun FilterCarouselItem(
             .padding(horizontal = 8.dp, vertical = 7.dp)
             .clickable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center,
+        verticalArrangement = Arrangement.SpaceBetween,
     ) {
         ProfileEraIndicator(profile, isSelected)
-
-        Spacer(modifier = Modifier.height(5.dp))
 
         Text(
             text = shortName(profile),
             color = if (isSelected) Color.White else Color.White.copy(alpha = 0.7f),
-            fontSize = if (isSelected) 10.sp else 9.sp,
+            fontSize = if (isSelected) 11.sp else 10.sp,
             fontFamily = profileFont,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
             textAlign = TextAlign.Center,
@@ -146,7 +266,7 @@ private fun FilterCarouselItem(
         Text(
             text = profile.deviceLabel.uppercase(),
             color = Color.White.copy(alpha = if (isSelected) 0.56f else 0.38f),
-            fontSize = 7.sp,
+            fontSize = 7.5.sp,
             fontFamily = FontFamily.Monospace,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,

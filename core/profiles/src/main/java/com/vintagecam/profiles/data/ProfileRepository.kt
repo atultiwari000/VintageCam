@@ -29,6 +29,8 @@ class ProfileRepository @Inject constructor(
             "polaroid_1990",
             "expired_instant",
             "super8_2020",
+            "ilford_hp5",
+            "trix_400",
             "cinestill_800t",
         )
     }

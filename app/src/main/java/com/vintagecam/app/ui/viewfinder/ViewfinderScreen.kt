@@ -21,7 +21,9 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -108,6 +110,7 @@ private fun ViewfinderContent(
 ) {
     val currentProfile = uiState.profiles.getOrNull(uiState.currentProfileIndex)
     val context = LocalContext.current
+    var filterBrowserExpanded by remember { mutableStateOf(false) }
     val previewViews = remember(context) {
         val previewView = PreviewView(context).apply {
             scaleType = PreviewView.ScaleType.FILL_START
@@ -182,7 +185,12 @@ private fun ViewfinderContent(
                 ProfileFilterCarousel(
                     profiles = uiState.profiles,
                     selectedIndex = uiState.currentProfileIndex,
-                    onProfileSelected = onProfileSelected,
+                    expanded = filterBrowserExpanded,
+                    onExpandedChange = { filterBrowserExpanded = it },
+                    onProfileSelected = { index ->
+                        onProfileSelected(index)
+                        filterBrowserExpanded = false
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(bottom = 4.dp),
@@ -194,6 +202,7 @@ private fun ViewfinderContent(
                     developingCount = uiState.developingCount,
                     onCapture = onCapture,
                     onOpenFilmRoll = onOpenFilmRoll,
+                    showProfileLabel = filterBrowserExpanded,
                     modifier = Modifier.padding(bottom = 16.dp),
                 )
             }

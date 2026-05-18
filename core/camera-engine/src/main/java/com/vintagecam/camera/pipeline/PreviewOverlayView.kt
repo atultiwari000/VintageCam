@@ -40,6 +40,12 @@ class PreviewOverlayView @JvmOverloads constructor(
         isDither = true
     }
     private val timeFormat = SimpleDateFormat("yyyy.MM.dd", Locale.US)
+    private var vignetteShader: RadialGradient? = null
+    private var vignetteWidth = 0
+    private var vignetteHeight = 0
+    private var lightLeakShader: RadialGradient? = null
+    private var lightLeakWidth = 0
+    private var lightLeakHeight = 0
 
     init {
         // Hardware acceleration for better performance
@@ -47,6 +53,7 @@ class PreviewOverlayView @JvmOverloads constructor(
     }
 
     fun setProfile(profile: CameraProfile?) {
+        if (currentProfile?.id == profile?.id) return
         currentProfile = profile
         invalidate()
     }
@@ -72,12 +79,13 @@ class PreviewOverlayView @JvmOverloads constructor(
         val effects = profile.effects.toSet()
         if ("LIGHT_LEAK" in effects) drawLightLeak(canvas)
         if ("JPEG_BLOCKS" in effects) drawJpegBlocks(canvas)
+        if ("GLITCH_SLICES" in effects) drawGlitchSlices(canvas)
         if ("FRAME_OVERLAY" in effects) drawFrameHint(canvas, profile)
         if (profile.dateStampStyle != DateStampStyle.NONE || "DATE_STAMP" in effects) {
             drawDateStamp(canvas, profile.dateStampStyle)
         }
 
-        if (profile.interlacedPreview || "VHS_DROPOUT" in effects) {
+        if (profile.interlacedPreview || "VHS_DROPOUT" in effects || "GLITCH_SLICES" in effects) {
             postInvalidateOnAnimation()
         }
     }
@@ -87,14 +95,20 @@ class PreviewOverlayView @JvmOverloads constructor(
         val centerY = height / 2f
         val maxRadius = hypot(centerX, centerY)
 
-        val gradient = RadialGradient(
-            centerX,
-            centerY,
-            maxRadius,
-            intArrayOf(Color.TRANSPARENT, Color.BLACK),
-            floatArrayOf(0.6f, 1f),
-            Shader.TileMode.CLAMP,
-        )
+        val gradient = if (vignetteShader == null || vignetteWidth != width || vignetteHeight != height) {
+            vignetteWidth = width
+            vignetteHeight = height
+            RadialGradient(
+                centerX,
+                centerY,
+                maxRadius,
+                intArrayOf(Color.TRANSPARENT, Color.BLACK),
+                floatArrayOf(0.6f, 1f),
+                Shader.TileMode.CLAMP,
+            ).also { vignetteShader = it }
+        } else {
+            vignetteShader
+        }
 
         paint.shader = gradient
         paint.alpha = (strength * 120).toInt() // 0–120 alpha (subtle for preview)
@@ -131,17 +145,61 @@ class PreviewOverlayView @JvmOverloads constructor(
     }
 
     private fun drawLightLeak(canvas: Canvas) {
-        paint.shader = RadialGradient(
-            width * 0.96f,
-            height * 0.08f,
-            width * 0.46f,
-            intArrayOf(Color.argb(72, 255, 92, 30), Color.argb(30, 255, 215, 70), Color.TRANSPARENT),
-            floatArrayOf(0f, 0.45f, 1f),
-            Shader.TileMode.CLAMP,
-        )
+        val gradient = if (lightLeakShader == null || lightLeakWidth != width || lightLeakHeight != height) {
+            lightLeakWidth = width
+            lightLeakHeight = height
+            RadialGradient(
+                width * 0.96f,
+                height * 0.08f,
+                width * 0.46f,
+                intArrayOf(Color.argb(72, 255, 92, 30), Color.argb(30, 255, 215, 70), Color.TRANSPARENT),
+                floatArrayOf(0f, 0.45f, 1f),
+                Shader.TileMode.CLAMP,
+            ).also { lightLeakShader = it }
+        } else {
+            lightLeakShader
+        }
+
+        paint.shader = gradient
         paint.alpha = 255
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
         paint.shader = null
+    }
+
+    private fun drawGlitchSlices(canvas: Canvas) {
+        val now = System.currentTimeMillis()
+        val pulse = ((now / 90L) % 9L).toInt()
+        val bandHeight = (height * 0.012f).coerceAtLeast(5f)
+        val drift = ((now / 17L) % width.coerceAtLeast(1)).toFloat()
+
+        paint.shader = null
+        paint.strokeWidth = 2f
+        paint.style = Paint.Style.FILL
+
+        repeat(5) { i ->
+            val y = ((now / (23L + i * 11L) + i * height / 5L) % height.coerceAtLeast(1)).toFloat()
+            val offset = ((pulse - 4) * (i + 1) * width * 0.006f)
+
+            paint.color = if (i % 2 == 0) Color.rgb(255, 45, 90) else Color.rgb(45, 255, 220)
+            paint.alpha = 34 + i * 5
+            canvas.drawRect(
+                offset,
+                y,
+                width.toFloat() + offset,
+                (y + bandHeight * (1.4f + i * 0.22f)).coerceAtMost(height.toFloat()),
+                paint,
+            )
+
+            paint.color = Color.WHITE
+            paint.alpha = 24
+            canvas.drawLine(0f, y + bandHeight, width.toFloat(), y + bandHeight + ((i % 2) * 4f), paint)
+        }
+
+        paint.color = Color.BLACK
+        paint.alpha = 38
+        val tearY = ((now / 31L) % height.coerceAtLeast(1)).toFloat()
+        canvas.drawRect(drift - width * 0.18f, tearY, drift + width * 0.34f, tearY + bandHeight, paint)
+        paint.alpha = 255
     }
 
     private fun drawJpegBlocks(canvas: Canvas) {

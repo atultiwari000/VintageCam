@@ -297,9 +297,9 @@
       "name": "Glitch",
       "category": "ARTISTIC",
       "tier": "SECRET",
-      "parameters": { "grain": 0.20, "vignette": 0.18, "vignetteMid": 0.52, "vignetteOuter": 0.92, "fade": 0.0, "saturation": 1.22, "contrast": 1.18, "halation": 0.0, "chromaticAberration": 0.016, "barrel": 0.0, "tintShadow": [-0.02, 0.04, 0.06], "tintHighlight": [0.05, -0.01, 0.02], "lutStrength": 0.35, "grainSize": "DIGITAL" },
+      "parameters": { "grain": 0.34, "vignette": 0.24, "vignetteMid": 0.50, "vignetteOuter": 0.88, "fade": 0.0, "saturation": 1.34, "contrast": 1.28, "halation": 0.0, "chromaticAberration": 0.028, "barrel": 0.0, "tintShadow": [-0.03, 0.06, 0.08], "tintHighlight": [0.08, -0.02, 0.03], "lutStrength": 0.45, "grainSize": "DIGITAL", "shadowNoiseIntensity": 0.28, "crushedBlacks": 0.16 },
       "assets": { "overlay": "overlays/glitch_slices.png", "assetStatus": "PLACEHOLDER" },
-      "effects": ["MASTER_GRADE", "GLITCH_SLICES", "VHS_CHROMA_BLEED"],
+      "effects": ["MASTER_GRADE", "BLUE_NOISE_GRAIN", "VHS_SCANLINES", "VHS_DROPOUT", "GLITCH_SLICES", "VHS_CHROMA_BLEED"],
       "captureHints": { "latencyMs": 140, "aspectRatio": "RATIO_16_9", "viewfinderType": "CRT", "deviceLabel": "Broken Signal", "soundId": "vhs" },
       "unlockCondition": { "type": "gesture", "value": "shake" }
     },

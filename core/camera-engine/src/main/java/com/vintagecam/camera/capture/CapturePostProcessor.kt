@@ -255,14 +255,31 @@ class CapturePostProcessor @Inject constructor(
         val src = bitmap.copy(Bitmap.Config.ARGB_8888, false)
         val canvas = Canvas(bitmap)
         val random = java.util.Random((width * 31L) + height)
-        repeat(10) {
-            val sliceHeight = (height * (0.008f + random.nextFloat() * 0.025f)).toInt().coerceAtLeast(2)
+        val glitchPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        repeat(18) { index ->
+            val sliceHeight = (height * (0.006f + random.nextFloat() * 0.045f)).toInt().coerceAtLeast(2)
             val top = random.nextInt((height - sliceHeight).coerceAtLeast(1))
-            val shift = ((random.nextFloat() - 0.5f) * width * 0.12f).toInt()
+            val shift = ((random.nextFloat() - 0.5f) * width * 0.24f).toInt()
             val srcRect = Rect(0, top, width, top + sliceHeight)
             val dstRect = Rect(shift, top, width + shift, top + sliceHeight)
             canvas.drawBitmap(src, srcRect, dstRect, null)
+
+            glitchPaint.color = if (index % 2 == 0) {
+                Color.argb(34, 255, 32, 92)
+            } else {
+                Color.argb(30, 32, 255, 218)
+            }
+            canvas.drawRect(0f, top.toFloat(), width.toFloat(), (top + sliceHeight).toFloat(), glitchPaint)
         }
+
+        repeat(7) {
+            val y = random.nextInt(height.coerceAtLeast(1)).toFloat()
+            glitchPaint.color = Color.argb(48 + random.nextInt(42), 255, 255, 255)
+            glitchPaint.strokeWidth = 1f + random.nextFloat() * 3f
+            canvas.drawLine(0f, y, width.toFloat(), y + random.nextInt(10), glitchPaint)
+        }
+
         src.recycle()
         return bitmap
     }

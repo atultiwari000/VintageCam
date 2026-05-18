@@ -46,6 +46,7 @@ internal fun CaptureArea(
     developingCount: Int,
     onCapture: () -> Unit,
     onOpenFilmRoll: () -> Unit,
+    showProfileLabel: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val profileFont = profileFont(profile)
@@ -63,14 +64,16 @@ internal fun CaptureArea(
         modifier = modifier,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text(
-            text = profile?.displayName.orEmpty().uppercase(),
-            color = Color.White,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Medium,
-            fontFamily = profileFont,
-            modifier = Modifier.padding(bottom = 8.dp),
-        )
+        if (showProfileLabel) {
+            Text(
+                text = profile?.displayName.orEmpty().uppercase(),
+                color = Color.White,
+                fontSize = 13.sp,
+                fontWeight = FontWeight.Medium,
+                fontFamily = profileFont,
+                modifier = Modifier.padding(bottom = 6.dp),
+            )
+        }
 
         Text(
             text = when (cameraState) {
@@ -82,7 +85,7 @@ internal fun CaptureArea(
             fontSize = 10.sp,
             fontFamily = profileFont,
             fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(bottom = 8.dp),
+            modifier = Modifier.padding(bottom = 7.dp),
         )
 
         Box(

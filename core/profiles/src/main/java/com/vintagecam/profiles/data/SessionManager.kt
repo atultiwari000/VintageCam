@@ -36,8 +36,22 @@ class SessionManager @Inject constructor(
 
     /** Add a photo to the session roll. Photo is already persisted by caller. */
     fun addCapturedPhoto(photo: SavedPhoto) {
-        _capturedPhotos.update { listOf(photo) + it }
+        _capturedPhotos.update { current ->
+            if (current.any { it.id == photo.id }) {
+                current.map { if (it.id == photo.id) photo else it }
+            } else {
+                listOf(photo) + current
+            }
+        }
         Log.d("SessionManager", "addCapturedPhoto: ${photo.id} — roll size ${_capturedPhotos.value.size}")
+    }
+
+    /** Replace an existing roll item, usually when a pending frame finishes developing. */
+    fun updateCapturedPhoto(photo: SavedPhoto) {
+        _capturedPhotos.update { current ->
+            current.map { if (it.id == photo.id) photo else it }
+        }
+        Log.d("SessionManager", "updateCapturedPhoto: ${photo.id} — processing=${photo.isProcessing}")
     }
 
     /** Delete a photo from the roll and from disk. */

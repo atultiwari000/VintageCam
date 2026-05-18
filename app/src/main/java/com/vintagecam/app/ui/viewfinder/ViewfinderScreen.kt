@@ -191,6 +191,7 @@ private fun ViewfinderContent(
                 CaptureArea(
                     profile = currentProfile,
                     cameraState = uiState.cameraState,
+                    developingCount = uiState.developingCount,
                     onCapture = onCapture,
                     onOpenFilmRoll = onOpenFilmRoll,
                     modifier = Modifier.padding(bottom = 16.dp),

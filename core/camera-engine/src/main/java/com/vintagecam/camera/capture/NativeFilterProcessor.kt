@@ -81,4 +81,32 @@ class NativeFilterProcessor @Inject constructor(
         val filter = fallbackFactory.getKotlinFilter(profile.id)
         return filter.apply(bitmap, profile, timestamp)
     }
+
+    /**
+     * Process a pre-decoded bitmap. Used when the UI wants to release the
+     * camera for the next shot as soon as the raw frame has been captured.
+     */
+    fun processBitmap(
+        bitmap: Bitmap,
+        profile: CameraProfile,
+        timestamp: Long,
+    ): Bitmap {
+        if (nativeImageProcessor.isAvailable()) {
+            val mutable = bitmap.copy(Bitmap.Config.ARGB_8888, true)
+            val success = nativeImageProcessor.processBitmap(
+                bitmap = mutable,
+                presetId = profile.id,
+                timestamp = timestamp,
+            )
+            if (success) return mutable
+
+            android.util.Log.w(
+                "NativeFilterProcessor",
+                "Native bitmap processing failed for ${profile.id}, falling back",
+            )
+        }
+
+        val filter = fallbackFactory.getKotlinFilter(profile.id)
+        return filter.apply(bitmap, profile, timestamp)
+    }
 }

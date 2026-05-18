@@ -14,6 +14,7 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
 import com.vintagecam.camera.capture.GallerySaver
 import com.vintagecam.camera.capture.NativeFilterProcessor
+import com.vintagecam.camera.capture.toBitmap
 import com.vintagecam.profiles.CameraProfile
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -81,52 +82,67 @@ class CameraXEngineImpl @Inject constructor(
         }
     }
 
-    override suspend fun capturePhoto(profile: CameraProfile): CaptureResult {
+    override suspend fun captureRawPhoto(
+        profile: CameraProfile,
+        capturedAtMillis: Long,
+    ): RawCaptureResult {
         val capture = imageCapture ?: throw IllegalStateException("Camera not started")
 
-        android.util.Log.d("CameraXEngine", "capturePhoto: begin profile=${profile.id}")
+        android.util.Log.d("CameraXEngine", "captureRawPhoto: begin profile=${profile.id}")
 
-        // Capture ImageProxy on main thread
         val imageProxy = withContext(Dispatchers.Main) {
             suspendCancellableCoroutine<ImageProxy> { cont ->
                 try {
-                    android.util.Log.d("CameraXEngine", "capturePhoto: takePicture requested profile=${profile.id}")
+                    android.util.Log.d("CameraXEngine", "captureRawPhoto: takePicture requested profile=${profile.id}")
                     capture.takePicture(
                         ContextCompat.getMainExecutor(context),
                         object : ImageCapture.OnImageCapturedCallback() {
                             override fun onCaptureSuccess(image: ImageProxy) {
-                                android.util.Log.d("CameraXEngine", "capturePhoto: onCaptureSuccess profile=${profile.id}")
+                                android.util.Log.d("CameraXEngine", "captureRawPhoto: onCaptureSuccess profile=${profile.id}")
                                 cont.resume(image)
                             }
                             override fun onError(exception: ImageCaptureException) {
-                                android.util.Log.e("CameraXEngine", "capturePhoto: onError profile=${profile.id}", exception)
+                                android.util.Log.e("CameraXEngine", "captureRawPhoto: onError profile=${profile.id}", exception)
                                 cont.resumeWithException(exception)
                             }
                         }
                     )
                 } catch (e: Exception) {
-                    android.util.Log.e("CameraXEngine", "capturePhoto: takePicture threw profile=${profile.id}", e)
+                    android.util.Log.e("CameraXEngine", "captureRawPhoto: takePicture threw profile=${profile.id}", e)
                     cont.resumeWithException(e)
                 }
             }
         }
 
-        val timestamp = System.currentTimeMillis()
-        android.util.Log.d("CameraXEngine", "capturePhoto: got imageProxy profile=${profile.id}")
+        android.util.Log.d("CameraXEngine", "captureRawPhoto: got imageProxy profile=${profile.id}")
 
-        // Process off the main thread and always close ImageProxy afterward.
-        val processed = withContext(Dispatchers.Default) {
+        val bitmap = withContext(Dispatchers.Default) {
             imageProxy.use { proxy ->
-                captureProcessor.process(proxy, profile, timestamp)
+                proxy.toBitmap()
             }
         }
+
+        return RawCaptureResult(bitmap, capturedAtMillis)
+    }
+
+    override suspend fun processPhoto(
+        bitmap: android.graphics.Bitmap,
+        profile: CameraProfile,
+        capturedAtMillis: Long,
+    ): android.graphics.Bitmap = withContext(Dispatchers.Default) {
+        captureProcessor.processBitmap(bitmap, profile, capturedAtMillis)
+    }
+
+    override suspend fun capturePhoto(profile: CameraProfile): CaptureResult {
+        val raw = captureRawPhoto(profile, System.currentTimeMillis())
+        val processed = processPhoto(raw.bitmap, profile, raw.capturedAtMillis)
 
         // Save to gallery on IO dispatcher
         val gallerySaver = GallerySaver(context)
         val uri = try {
             withContext(Dispatchers.IO) {
                 android.util.Log.d("CameraXEngine", "capturePhoto: saving to gallery profile=${profile.id}")
-                gallerySaver.save(processed, profile, timestamp)
+                gallerySaver.save(processed, profile, raw.capturedAtMillis)
             }
         } catch (e: Exception) {
             android.util.Log.e("CameraXEngine", "Failed to save to gallery", e)
@@ -135,7 +151,7 @@ class CameraXEngineImpl @Inject constructor(
 
         android.util.Log.d("CameraXEngine", "capturePhoto: complete profile=${profile.id} uri=$uri")
 
-        return CaptureResult(processed, uri, timestamp)
+        return CaptureResult(processed, uri, raw.capturedAtMillis)
     }
 
     override fun switchCamera() {

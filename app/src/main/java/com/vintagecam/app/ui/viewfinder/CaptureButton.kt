@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -39,6 +40,7 @@ import kotlinx.coroutines.delay
 internal fun CaptureArea(
     profile: CameraProfile?,
     cameraState: CameraState,
+    developingCount: Int,
     onCapture: () -> Unit,
     onOpenFilmRoll: () -> Unit,
     modifier: Modifier = Modifier,
@@ -71,7 +73,7 @@ internal fun CaptureArea(
             text = when (cameraState) {
                 CameraState.Capturing -> "BUSY"
                 CameraState.Processing -> "PROC"
-                CameraState.Previewing -> "READY"
+                CameraState.Previewing -> if (developingCount > 0) "DEV $developingCount" else "READY"
             },
             color = Color.White.copy(alpha = 0.7f),
             fontSize = 10.sp,
@@ -88,6 +90,7 @@ internal fun CaptureArea(
                 onClick = onCapture,
                 onSwipeUp = onOpenFilmRoll,
                 enabled = cameraState == CameraState.Previewing,
+                developingCount = developingCount,
             )
 
             if (showFlash) {
@@ -106,6 +109,7 @@ private fun CaptureButton(
     onClick: () -> Unit,
     onSwipeUp: () -> Unit,
     enabled: Boolean,
+    developingCount: Int,
     modifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
@@ -146,6 +150,15 @@ private fun CaptureButton(
                 .fillMaxSize()
                 .border(width = 4.dp, color = Color.White, shape = CircleShape),
         )
+
+        if (developingCount > 0) {
+            CircularProgressIndicator(
+                modifier = Modifier.fillMaxSize(),
+                color = Color.White.copy(alpha = 0.8f),
+                strokeWidth = 3.dp,
+                trackColor = Color.White.copy(alpha = 0.18f),
+            )
+        }
 
         Box(
             modifier = Modifier

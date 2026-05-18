@@ -39,7 +39,26 @@ class GalleryViewModel @Inject constructor(
     init {
         viewModelScope.launch {
             sessionManager.capturedPhotos.collect { photos ->
-                _uiState.update { it.copy(photos = photos) }
+                val currentFull = _uiState.value.fullScreenPhoto
+                val updatedFull = currentFull?.let { photo ->
+                    photos.find { it.id == photo.id }
+                }
+
+                _uiState.update {
+                    it.copy(
+                        photos = photos,
+                        fullScreenPhoto = updatedFull ?: it.fullScreenPhoto,
+                    )
+                }
+
+                if (
+                    updatedFull != null &&
+                    !updatedFull.isProcessing &&
+                    updatedFull.errorMessage == null &&
+                    _uiState.value.isFullScreen
+                ) {
+                    loadFullScreenBitmap(updatedFull)
+                }
             }
         }
     }
@@ -54,15 +73,21 @@ class GalleryViewModel @Inject constructor(
                 isFullScreen = true,
             )
         }
-        viewModelScope.launch {
-            val bitmap = withContext(Dispatchers.IO) {
-                photoStore.loadFull(photo.id)
+        if (!photo.isProcessing && photo.errorMessage == null) {
+            viewModelScope.launch {
+                loadFullScreenBitmap(photo)
             }
-            _uiState.update {
-                if (it.fullScreenPhoto?.id == photo.id) {
-                    it.copy(fullScreenBitmap = bitmap)
-                } else it
-            }
+        }
+    }
+
+    private suspend fun loadFullScreenBitmap(photo: SavedPhoto) {
+        val bitmap = withContext(Dispatchers.IO) {
+            photoStore.loadFull(photo.id)
+        }
+        _uiState.update {
+            if (it.fullScreenPhoto?.id == photo.id) {
+                it.copy(fullScreenBitmap = bitmap)
+            } else it
         }
     }
 

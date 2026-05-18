@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -48,7 +49,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -178,11 +178,12 @@ private fun FilmstripFrame(
     photo: SavedPhoto,
     onClick: () -> Unit,
 ) {
-    val context = LocalContext.current
-    var bitmap by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var bitmap by remember(photo.id, photo.filePath, photo.isProcessing) {
+        mutableStateOf<android.graphics.Bitmap?>(null)
+    }
 
     // Load thumbnail on composition
-    if (bitmap == null) {
+    if (!photo.isProcessing && photo.errorMessage == null && bitmap == null) {
         val options = BitmapFactory.Options().apply {
             inSampleSize = 4
         }
@@ -209,7 +210,16 @@ private fun FilmstripFrame(
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            if (bitmap != null) {
+            if (photo.isProcessing) {
+                LoadingDevelopingIndicator()
+            } else if (photo.errorMessage != null) {
+                Text(
+                    text = "FAILED",
+                    color = Color(0xFFFF6B6B),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            } else if (bitmap != null) {
                 Image(
                     bitmap = bitmap!!.asImageBitmap(),
                     contentDescription = "Photo ${photo.profileName}",
@@ -225,7 +235,7 @@ private fun FilmstripFrame(
 
         // Profile label
         Text(
-            text = photo.profileName.uppercase(),
+            text = if (photo.isProcessing) "DEVELOPING" else photo.profileName.uppercase(),
             color = Color.White,
             fontSize = 9.sp,
             fontWeight = FontWeight.Medium,
@@ -266,7 +276,11 @@ private fun FullScreenViewer(
             },
     ) {
         // The photo image
-        if (uiState.fullScreenBitmap != null) {
+        if (photo.isProcessing) {
+            DevelopingFullScreen()
+        } else if (photo.errorMessage != null) {
+            FailedFullScreen(photo.errorMessage)
+        } else if (uiState.fullScreenBitmap != null) {
             Image(
                 bitmap = uiState.fullScreenBitmap!!.asImageBitmap(),
                 contentDescription = "Photo",
@@ -317,7 +331,7 @@ private fun FullScreenViewer(
 
             IconButton(
                 onClick = onDelete,
-                enabled = !uiState.deleting,
+                enabled = !uiState.deleting && !photo.isProcessing,
             ) {
                 Icon(
                     imageVector = Icons.Default.Delete,
@@ -371,7 +385,78 @@ private fun FullScreenViewer(
         }
 
         // Bottom metadata
-        MetadataFooter(photo = photo)
+        if (!photo.isProcessing && photo.errorMessage == null) {
+            MetadataFooter(photo = photo)
+        }
+    }
+}
+
+@Composable
+private fun LoadingDevelopingIndicator() {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        CircularProgressIndicator(
+            modifier = Modifier.size(28.dp),
+            color = Color.White.copy(alpha = 0.75f),
+            strokeWidth = 2.dp,
+            trackColor = Color.White.copy(alpha = 0.12f),
+        )
+        Spacer(modifier = Modifier.height(10.dp))
+        Text(
+            text = "DEV",
+            color = Color.White.copy(alpha = 0.45f),
+            fontSize = 9.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun DevelopingFullScreen() {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            CircularProgressIndicator(
+                modifier = Modifier.size(42.dp),
+                color = Color.White.copy(alpha = 0.8f),
+                strokeWidth = 3.dp,
+                trackColor = Color.White.copy(alpha = 0.14f),
+            )
+            Spacer(modifier = Modifier.height(16.dp))
+            Text(
+                text = "DEVELOPING FRAME",
+                color = Color.White.copy(alpha = 0.55f),
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.sp,
+            )
+        }
+    }
+}
+
+@Composable
+private fun FailedFullScreen(message: String?) {
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text(
+                text = "FRAME FAILED",
+                color = Color(0xFFFF6B6B),
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 2.sp,
+            )
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = message ?: "Capture failed",
+                color = Color.White.copy(alpha = 0.35f),
+                fontSize = 10.sp,
+            )
+        }
     }
 }
 

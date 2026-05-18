@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vintagecam.app.ui.theme.VintageCamTypography
 import com.vintagecam.profiles.CameraProfile
+import com.vintagecam.profiles.ComputationalMode
 import com.vintagecam.profiles.Era
 import kotlinx.coroutines.launch
 
@@ -151,15 +152,34 @@ private fun CompactFilterDock(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.Center,
             ) {
-                Text(
-                    text = shortName(selected),
-                    color = Color.White,
-                    fontSize = 11.sp,
-                    fontFamily = FontFamily.Monospace,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(5.dp),
+                ) {
+                    Text(
+                        text = shortName(selected),
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
+                    )
+                    if (selected.usesComputationalCapture()) {
+                        Text(
+                            text = "HQ${selected.burstFrameCount}",
+                            color = Color(0xFFBCEBFF),
+                            fontSize = 7.sp,
+                            fontFamily = FontFamily.Monospace,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(3.dp))
+                                .background(Color(0xFF15657A).copy(alpha = 0.58f))
+                                .padding(horizontal = 3.dp, vertical = 1.dp),
+                        )
+                    }
+                }
                 Text(
                     text = selected.deviceLabel.uppercase(),
                     color = Color.White.copy(alpha = 0.55f),
@@ -277,6 +297,9 @@ private fun FilterCarouselItem(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            if (profile.usesComputationalCapture()) {
+                FilterPill("HQ ${profile.burstFrameCount}F", Color(0xFF28B8D8).copy(alpha = 0.30f))
+            }
             FilterPill(profile.categoryLabel, Color.White.copy(alpha = 0.18f))
             if (profile.tierLabel != "FREE") {
                 FilterPill(profile.tierLabel, tierColor(profile).copy(alpha = 0.28f))
@@ -448,4 +471,8 @@ private fun shortName(profile: CameraProfile): String = when (profile.id) {
     "super8_2020" -> "SUPER-8"
     "cinestill_800t" -> "800T"
     else -> profile.displayName.uppercase()
+}
+
+private fun CameraProfile.usesComputationalCapture(): Boolean {
+    return computationalMode != ComputationalMode.SINGLE && burstFrameCount > 1
 }

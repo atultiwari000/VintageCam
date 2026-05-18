@@ -1,6 +1,7 @@
 package com.vintagecam.app.ui.viewfinder
 
 import android.content.Context
+import android.os.SystemClock
 import android.view.View
 import androidx.camera.core.Preview
 import androidx.lifecycle.LifecycleOwner
@@ -150,20 +151,29 @@ class ViewfinderViewModel @Inject constructor(
             )
 
             try {
-                android.util.Log.d("ViewfinderViewModel", "onCapture: start profile=${profile.id}")
+                val totalStartMs = SystemClock.elapsedRealtime()
+                android.util.Log.d(
+                    "ViewfinderViewModel",
+                    "onCapture: start profile=${profile.id} mode=${profile.computationalMode} frames=${profile.burstFrameCount}",
+                )
                 sessionManager.addCapturedPhoto(pendingPhoto)
 
                 _uiState.update { it.copy(cameraState = CameraState.Capturing) }
                 cameraSoundEngine.playShutter(profile)
                 delay(profile.captureLatencyMs)
 
+                val rawStartMs = SystemClock.elapsedRealtime()
                 val raw = cameraEngine.captureRawPhoto(profile, timestamp)
+                val rawMs = SystemClock.elapsedRealtime() - rawStartMs
                 _uiState.update { it.copy(cameraState = CameraState.Previewing) }
 
-                android.util.Log.d("ViewfinderViewModel", "onCapture: raw frame captured id=${pendingPhoto.id}")
+                android.util.Log.d("ViewfinderViewModel", "onCapture: raw frame captured id=${pendingPhoto.id} rawMs=$rawMs")
 
+                val processStartMs = SystemClock.elapsedRealtime()
                 val processed = cameraEngine.processPhoto(raw.bitmap, profile, raw.capturedAtMillis)
+                val processMs = SystemClock.elapsedRealtime() - processStartMs
 
+                val saveStartMs = SystemClock.elapsedRealtime()
                 val savedPhoto = withContext(Dispatchers.IO) {
                     photoStore.save(
                         bitmap = processed,
@@ -172,12 +182,17 @@ class ViewfinderViewModel @Inject constructor(
                         timestamp = raw.capturedAtMillis,
                     )
                 }
+                val saveMs = SystemClock.elapsedRealtime() - saveStartMs
 
                 android.util.Log.d("ViewfinderViewModel", "onCapture: saved id=${savedPhoto.id}")
 
                 sessionManager.updateCapturedPhoto(savedPhoto)
 
-                android.util.Log.d("ViewfinderViewModel", "onCapture: complete profile=${profile.id}")
+                val totalMs = SystemClock.elapsedRealtime() - totalStartMs
+                android.util.Log.d(
+                    "ViewfinderViewModel",
+                    "onCapture: complete profile=${profile.id} rawMs=$rawMs processMs=$processMs saveMs=$saveMs totalMs=$totalMs",
+                )
             } catch (e: Throwable) {
                 android.util.Log.e("ViewfinderViewModel", "Capture failed", e)
                 sessionManager.updateCapturedPhoto(

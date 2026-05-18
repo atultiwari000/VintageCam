@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vintagecam.app.ui.theme.VintageCamTypography
 import com.vintagecam.profiles.CameraProfile
+import com.vintagecam.profiles.ComputationalMode
 import com.vintagecam.profiles.Era
 import kotlinx.coroutines.delay
 
@@ -77,9 +78,13 @@ internal fun CaptureArea(
 
         Text(
             text = when (cameraState) {
-                CameraState.Capturing -> "BUSY"
+                CameraState.Capturing -> if (profile.usesComputationalCapture()) "MERGE ${profile?.burstFrameCount ?: 1}F" else "BUSY"
                 CameraState.Processing -> "PROC"
-                CameraState.Previewing -> if (developingCount > 0) "DEV $developingCount" else "READY"
+                CameraState.Previewing -> when {
+                    developingCount > 0 -> "DEV $developingCount"
+                    profile.usesComputationalCapture() -> "HQ ${profile?.burstFrameCount ?: 1}F"
+                    else -> "READY"
+                }
             },
             color = Color.White.copy(alpha = 0.7f),
             fontSize = 10.sp,
@@ -206,4 +211,8 @@ private fun profileFont(profile: CameraProfile?): FontFamily {
         Era.TWO_THOUSANDS -> VintageCamTypography.digitalFont
         null -> VintageCamTypography.digitalFont
     }
+}
+
+private fun CameraProfile?.usesComputationalCapture(): Boolean {
+    return this != null && computationalMode != ComputationalMode.SINGLE && burstFrameCount > 1
 }

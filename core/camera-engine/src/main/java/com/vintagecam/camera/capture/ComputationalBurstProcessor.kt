@@ -5,13 +5,14 @@ import com.vintagecam.profiles.CameraProfile
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 /**
  * First-pass computational capture path.
  *
- * This deliberately starts with a motion-tolerant weighted merge instead of
- * full alignment. It gives selected filters cleaner source material now, while
- * leaving room for native alignment/HDR to replace the internals later.
+ * This deliberately uses lightweight translation alignment instead of full
+ * optical flow/ECC. It gives selected filters cleaner source material now,
+ * while leaving room for native alignment/HDR to replace the internals later.
  */
 internal object ComputationalBurstProcessor {
 
@@ -28,6 +29,7 @@ internal object ComputationalBurstProcessor {
         private val height = reference.height
         private val mergedPixels = IntArray(width * height)
         private val framePixels = IntArray(width * height)
+        private val referenceLuma: ByteArray
 
         private val noiseReduction = profile.noiseReductionStrength.coerceIn(0f, 1f)
         private val toneRecovery = profile.toneRecoveryStrength.coerceIn(0f, 1f)
@@ -35,6 +37,7 @@ internal object ComputationalBurstProcessor {
 
         init {
             reference.getPixels(mergedPixels, 0, width, 0, 0, width, height)
+            referenceLuma = downsampleLuma(mergedPixels, width, height)
         }
 
         fun addFrame(frame: Bitmap) {
@@ -44,18 +47,31 @@ internal object ComputationalBurstProcessor {
             val baseBlend = (noiseReduction / (totalFrames - 1).coerceAtLeast(1)).coerceIn(0f, 0.32f)
             if (baseBlend <= 0f) return
 
-            for (i in mergedPixels.indices) {
-                val base = mergedPixels[i]
-                val sample = framePixels[i]
-                val motionWeight = motionWeight(base, sample)
-                val blend = baseBlend * motionWeight * motionWeight
-                if (blend <= 0.002f) continue
+            val offset = estimateOffset(framePixels)
 
-                val a = base ushr 24
-                val r = blendChannel(base.red, sample.red, blend)
-                val g = blendChannel(base.green, sample.green, blend)
-                val b = blendChannel(base.blue, sample.blue, blend)
-                mergedPixels[i] = argb(a, r, g, b)
+            for (y in 0 until height) {
+                val sampleY = y + offset.y
+                if (sampleY !in 0 until height) continue
+                val row = y * width
+                val sampleRow = sampleY * width
+
+                for (x in 0 until width) {
+                    val sampleX = x + offset.x
+                    if (sampleX !in 0 until width) continue
+
+                    val i = row + x
+                    val base = mergedPixels[i]
+                    val sample = framePixels[sampleRow + sampleX]
+                    val motionWeight = motionWeight(base, sample)
+                    val blend = baseBlend * motionWeight * motionWeight
+                    if (blend <= 0.002f) continue
+
+                    val a = base ushr 24
+                    val r = blendChannel(base.red, sample.red, blend)
+                    val g = blendChannel(base.green, sample.green, blend)
+                    val b = blendChannel(base.blue, sample.blue, blend)
+                    mergedPixels[i] = argb(a, r, g, b)
+                }
             }
         }
 
@@ -93,6 +109,29 @@ internal object ComputationalBurstProcessor {
 
                 mergedPixels[i] = argb(a, r, g, b)
             }
+        }
+
+        private fun estimateOffset(pixels: IntArray): PixelOffset {
+            val sampleLuma = downsampleLuma(pixels, width, height)
+            val zeroError = alignmentError(referenceLuma, sampleLuma, 0, 0)
+            var best = PixelOffset(0, 0)
+            var bestError = zeroError
+
+            for (dy in -ALIGNMENT_SEARCH_RADIUS..ALIGNMENT_SEARCH_RADIUS) {
+                for (dx in -ALIGNMENT_SEARCH_RADIUS..ALIGNMENT_SEARCH_RADIUS) {
+                    if (dx == 0 && dy == 0) continue
+                    val error = alignmentError(referenceLuma, sampleLuma, dx, dy)
+                    if (error < bestError) {
+                        bestError = error
+                        best = PixelOffset(
+                            x = (dx * width / ALIGNMENT_SAMPLE_SIZE.toFloat()).roundToInt(),
+                            y = (dy * height / ALIGNMENT_SAMPLE_SIZE.toFloat()).roundToInt(),
+                        )
+                    }
+                }
+            }
+
+            return if (bestError < zeroError * 0.92f) best else PixelOffset(0, 0)
         }
     }
 
@@ -134,6 +173,47 @@ internal object ComputationalBurstProcessor {
 
     private fun luma(r: Int, g: Int, b: Int): Float = r * 0.299f + g * 0.587f + b * 0.114f
 
+    private fun downsampleLuma(pixels: IntArray, width: Int, height: Int): ByteArray {
+        val output = ByteArray(ALIGNMENT_SAMPLE_SIZE * ALIGNMENT_SAMPLE_SIZE)
+        val cropLeft = width * 0.15f
+        val cropTop = height * 0.15f
+        val cropWidth = width * 0.70f
+        val cropHeight = height * 0.70f
+
+        for (y in 0 until ALIGNMENT_SAMPLE_SIZE) {
+            val sourceY = (cropTop + cropHeight * (y + 0.5f) / ALIGNMENT_SAMPLE_SIZE).toInt().coerceIn(0, height - 1)
+            for (x in 0 until ALIGNMENT_SAMPLE_SIZE) {
+                val sourceX = (cropLeft + cropWidth * (x + 0.5f) / ALIGNMENT_SAMPLE_SIZE).toInt().coerceIn(0, width - 1)
+                val pixel = pixels[sourceY * width + sourceX]
+                output[y * ALIGNMENT_SAMPLE_SIZE + x] = luma(pixel.red, pixel.green, pixel.blue).toInt().coerceIn(0, 255).toByte()
+            }
+        }
+
+        return output
+    }
+
+    private fun alignmentError(reference: ByteArray, sample: ByteArray, dx: Int, dy: Int): Float {
+        var error = 0L
+        var count = 0
+        val margin = ALIGNMENT_SEARCH_RADIUS + 2
+
+        for (y in margin until ALIGNMENT_SAMPLE_SIZE - margin) {
+            val sampleY = y + dy
+            if (sampleY !in 0 until ALIGNMENT_SAMPLE_SIZE) continue
+            for (x in margin until ALIGNMENT_SAMPLE_SIZE - margin) {
+                val sampleX = x + dx
+                if (sampleX !in 0 until ALIGNMENT_SAMPLE_SIZE) continue
+                val refValue = reference[y * ALIGNMENT_SAMPLE_SIZE + x].toInt() and 0xFF
+                val sampleValue = sample[sampleY * ALIGNMENT_SAMPLE_SIZE + sampleX].toInt() and 0xFF
+                val delta = refValue - sampleValue
+                error += delta * delta
+                count++
+            }
+        }
+
+        return if (count == 0) Float.MAX_VALUE else error / count.toFloat()
+    }
+
     private val Int.red: Int get() = (this shr 16) and 0xFF
     private val Int.green: Int get() = (this shr 8) and 0xFF
     private val Int.blue: Int get() = this and 0xFF
@@ -141,4 +221,9 @@ internal object ComputationalBurstProcessor {
     private fun argb(alpha: Int, red: Int, green: Int, blue: Int): Int {
         return (alpha shl 24) or (red shl 16) or (green shl 8) or blue
     }
+
+    private data class PixelOffset(val x: Int, val y: Int)
+
+    private const val ALIGNMENT_SAMPLE_SIZE = 96
+    private const val ALIGNMENT_SEARCH_RADIUS = 4
 }

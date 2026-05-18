@@ -6,11 +6,11 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -24,18 +24,14 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -46,6 +42,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.pointer.pointerInput
@@ -56,7 +53,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.Image
 import androidx.hilt.navigation.compose.hiltViewModel
-import com.vintagecam.profiles.Era
 import com.vintagecam.profiles.data.SavedPhoto
 import java.io.File
 import java.text.SimpleDateFormat
@@ -285,10 +281,18 @@ private fun FullScreenViewer(
             .fillMaxSize()
             .background(Color.Black)
             .pointerInput(Unit) {
-                detectHorizontalDragGestures { _, dragAmount ->
-                    if (dragAmount > 100f) onPrevious()
-                    else if (dragAmount < -100f) onNext()
-                }
+                var totalDrag = 0f
+                detectHorizontalDragGestures(
+                    onDragStart = { totalDrag = 0f },
+                    onHorizontalDrag = { _, dragAmount -> totalDrag += dragAmount },
+                    onDragEnd = {
+                        when {
+                            totalDrag > 120f -> onPrevious()
+                            totalDrag < -120f -> onNext()
+                        }
+                    },
+                    onDragCancel = { totalDrag = 0f },
+                )
             },
     ) {
         // The photo image
@@ -301,7 +305,9 @@ private fun FullScreenViewer(
                 bitmap = uiState.fullScreenBitmap!!.asImageBitmap(),
                 contentDescription = "Photo",
                 contentScale = ContentScale.Fit,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 12.dp, vertical = 78.dp),
             )
         } else {
             // Loading placeholder
@@ -313,11 +319,34 @@ private fun FullScreenViewer(
             }
         }
 
-        // Top bar — close, profile name, delete
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(118.dp)
+                .align(Alignment.TopCenter)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color.Black.copy(alpha = 0.72f), Color.Transparent),
+                    ),
+                ),
+        )
+
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(150.dp)
+                .align(Alignment.BottomCenter)
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.78f)),
+                    ),
+                ),
+        )
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(16.dp),
+                .padding(horizontal = 12.dp, vertical = 14.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -332,10 +361,11 @@ private fun FullScreenViewer(
 
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text(
-                    text = photo.profileName,
+                    text = photo.profileName.uppercase(Locale.US),
                     color = Color.White,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp,
                 )
                 Text(
                     text = formatDate(photo.timestampMillis),
@@ -371,46 +401,29 @@ private fun FullScreenViewer(
             }
         }
 
-        // Navigation arrows (left / right)
-        if (uiState.photos.size > 1) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .align(Alignment.CenterStart),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                IconButton(onClick = onPrevious) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowBack,
-                        contentDescription = "Previous",
-                        tint = Color.White.copy(alpha = 0.8f),
-                        modifier = Modifier.size(32.dp),
-                    )
-                }
-                Spacer(modifier = Modifier.weight(1f))
-                IconButton(onClick = onNext) {
-                    Icon(
-                        imageVector = Icons.Default.ArrowForward,
-                        contentDescription = "Next",
-                        tint = Color.White.copy(alpha = 0.8f),
-                        modifier = Modifier.size(32.dp),
-                    )
-                }
-            }
-        }
-
         // Page indicator
         val currentIndex = uiState.photos.indexOfFirst { it.id == photo.id }
         if (uiState.photos.size > 1) {
-            Text(
-                text = "${currentIndex + 1} / ${uiState.photos.size}",
-                color = Color.White.copy(alpha = 0.4f),
-                fontSize = 10.sp,
+            Column(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 32.dp),
-            )
+                    .padding(bottom = 18.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                Text(
+                    text = "${currentIndex + 1} / ${uiState.photos.size}",
+                    color = Color.White.copy(alpha = 0.58f),
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                )
+                Text(
+                    text = "SWIPE TO BROWSE",
+                    color = Color.White.copy(alpha = 0.28f),
+                    fontSize = 8.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.6.sp,
+                )
+            }
         }
 
         // Bottom metadata
@@ -492,35 +505,32 @@ private fun FailedFullScreen(message: String?) {
 // ── Metadata Footer ────────────────────────────────────────────────────
 
 @Composable
-private fun MetadataFooter(photo: SavedPhoto) {
-    // Positioned at the bottom by the parent Box in FullScreenViewer
+private fun BoxScope.MetadataFooter(photo: SavedPhoto) {
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+            .align(Alignment.BottomStart)
+            .padding(horizontal = 18.dp, vertical = 18.dp),
     ) {
         Column(
             modifier = Modifier
-                .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
-                .padding(horizontal = 16.dp, vertical = 10.dp),
+                .clip(RoundedCornerShape(6.dp))
+                .background(Color.Black.copy(alpha = 0.42f))
+                .padding(horizontal = 14.dp, vertical = 9.dp),
         ) {
             val file = File(photo.filePath)
             Text(
-                text = photo.profileName,
+                text = photo.profileName.uppercase(Locale.US),
                 color = Color.White,
-                fontSize = 11.sp,
-                fontWeight = FontWeight.Medium,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp,
             )
             Text(
-                text = formatDate(photo.timestampMillis),
+                text = "${formatDate(photo.timestampMillis)}  ${file.length() / 1024} KB",
                 color = Color.White.copy(alpha = 0.55f),
                 fontSize = 9.sp,
                 fontFamily = FontFamily.Monospace,
-            )
-            Text(
-                text = "${file.length() / 1024} KB",
-                color = Color.White.copy(alpha = 0.3f),
-                fontSize = 8.sp,
             )
         }
     }

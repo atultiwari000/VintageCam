@@ -1,5 +1,6 @@
 package com.vintagecam.camera.capture
 
+import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -14,6 +15,7 @@ import android.graphics.Shader
 import android.graphics.Typeface
 import com.vintagecam.profiles.CameraProfile
 import com.vintagecam.profiles.DateStampStyle
+import dagger.hilt.android.qualifiers.ApplicationContext
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -22,13 +24,18 @@ import javax.inject.Singleton
 import kotlin.math.hypot
 
 @Singleton
-class CapturePostProcessor @Inject constructor() {
+class CapturePostProcessor @Inject constructor(
+    @ApplicationContext private val context: Context,
+) {
+    private val lutCache = mutableMapOf<String, CubeLut?>()
 
     fun apply(input: Bitmap, profile: CameraProfile, capturedAtMillis: Long): Bitmap {
         var result = input.copy(Bitmap.Config.ARGB_8888, true)
 
         // Apply color matrix
         result = applyColorMatrix(result, profile.colorMatrix)
+
+        result = applyLutIfAvailable(result, profile)
 
         // Apply vignette
         if (profile.vignetteStrength > 0) {
@@ -48,6 +55,27 @@ class CapturePostProcessor @Inject constructor() {
         }
 
         return result
+    }
+
+    private fun applyLutIfAvailable(bitmap: Bitmap, profile: CameraProfile): Bitmap {
+        val path = profile.lutAssetPath ?: return bitmap
+        val lut = lutCache.getOrPut(path) {
+            runCatching {
+                context.assets.open(path).use { CubeLut.parse(it) }
+            }.getOrNull().also {
+                if (it == null) {
+                    android.util.Log.w("CapturePostProcessor", "LUT unavailable or invalid for ${profile.id}: $path")
+                }
+            }
+        } ?: return bitmap
+
+        val width = bitmap.width
+        val height = bitmap.height
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+        lut.applyTo(pixels, if ("LUT_3D" in profile.effects) 1f else 0.55f)
+        bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+        return bitmap
     }
 
     private fun applyColorMatrix(bitmap: Bitmap, matrix: FloatArray): Bitmap {

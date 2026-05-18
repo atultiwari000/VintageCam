@@ -47,6 +47,7 @@ data class FilterPreset(
             tierLabel = tier.name,
             assetStatusLabel = assets.assetStatus.name,
             effects = effectNames,
+            lutAssetPath = assets.lut,
         )
     }
 }

@@ -28,6 +28,7 @@ data class CameraProfile(
 	val tierLabel: String = "FREE",
 	val assetStatusLabel: String = "AVAILABLE",
 	val effects: List<String> = emptyList(),
+	val lutAssetPath: String? = null,
 ) : Parcelable
 
 enum class Era {

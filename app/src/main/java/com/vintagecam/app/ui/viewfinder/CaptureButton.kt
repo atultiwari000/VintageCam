@@ -2,6 +2,7 @@ package com.vintagecam.app.ui.viewfinder
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -23,7 +24,9 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -83,7 +86,7 @@ internal fun CaptureArea(
         )
 
         Box(
-            modifier = Modifier.size(72.dp),
+            modifier = Modifier.size(84.dp),
             contentAlignment = Alignment.Center,
         ) {
             CaptureButton(
@@ -145,15 +148,32 @@ private fun CaptureButton(
             },
         contentAlignment = Alignment.Center,
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .border(width = 4.dp, color = Color.White, shape = CircleShape),
-        )
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val radius = size.minDimension / 2f
+            drawCircle(
+                color = Color.Black.copy(alpha = 0.42f),
+                radius = radius,
+            )
+            drawCircle(
+                color = Color.White.copy(alpha = if (enabled) 0.92f else 0.42f),
+                radius = radius - 2.dp.toPx(),
+                style = Stroke(width = 4.dp.toPx()),
+            )
+            drawCircle(
+                color = Color.White.copy(alpha = 0.22f),
+                radius = radius - 10.dp.toPx(),
+                style = Stroke(width = 1.dp.toPx()),
+            )
+            drawCircle(
+                color = Color.White.copy(alpha = 0.30f),
+                radius = 2.dp.toPx(),
+                center = Offset(size.width * 0.34f, size.height * 0.30f),
+            )
+        }
 
         if (developingCount > 0) {
             CircularProgressIndicator(
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize(0.96f),
                 color = Color.White.copy(alpha = 0.8f),
                 strokeWidth = 3.dp,
                 trackColor = Color.White.copy(alpha = 0.18f),
@@ -162,8 +182,16 @@ private fun CaptureButton(
 
         Box(
             modifier = Modifier
-                .fillMaxSize(0.85f)
-                .background(Color.Black, CircleShape),
+                .fillMaxSize(if (isPressed) 0.64f else 0.70f)
+                .background(
+                    if (enabled) Color.Black.copy(alpha = 0.88f) else Color.Black.copy(alpha = 0.42f),
+                    CircleShape,
+                )
+                .border(
+                    width = 1.dp,
+                    color = Color.White.copy(alpha = 0.18f),
+                    shape = CircleShape,
+                ),
         )
     }
 }

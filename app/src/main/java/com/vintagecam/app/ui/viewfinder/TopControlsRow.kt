@@ -1,8 +1,12 @@
 package com.vintagecam.app.ui.viewfinder
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FlashOff
 import androidx.compose.material.icons.filled.FlashOn
@@ -36,12 +40,14 @@ internal fun TopControlsRow(
             onClick = onToggleFlash,
             enabled = controlsEnabled,
         ) {
-            Icon(
-                imageVector = if (flashEnabled) Icons.Filled.FlashOn else Icons.Filled.FlashOff,
-                contentDescription = if (flashEnabled) "Turn flash off" else "Turn flash on",
-                tint = tint,
-                modifier = Modifier.size(24.dp),
-            )
+            ControlLens(enabled = controlsEnabled) {
+                Icon(
+                    imageVector = if (flashEnabled) Icons.Filled.FlashOn else Icons.Filled.FlashOff,
+                    contentDescription = if (flashEnabled) "Turn flash off" else "Turn flash on",
+                    tint = tint,
+                    modifier = Modifier.size(22.dp),
+                )
+            }
         }
 
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -49,25 +55,45 @@ internal fun TopControlsRow(
                 onClick = onSwitchCamera,
                 enabled = controlsEnabled,
             ) {
-                Icon(
-                    imageVector = Icons.Filled.SwitchCamera,
-                    contentDescription = "Switch camera",
-                    tint = tint,
-                    modifier = Modifier.size(24.dp),
-                )
+                ControlLens(enabled = controlsEnabled) {
+                    Icon(
+                        imageVector = Icons.Filled.SwitchCamera,
+                        contentDescription = "Switch camera",
+                        tint = tint,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
             }
 
             IconButton(
                 onClick = onGalleryClick,
                 enabled = controlsEnabled,
             ) {
-                Icon(
-                    imageVector = Icons.Filled.PhotoLibrary,
-                    contentDescription = "Open gallery",
-                    tint = tint,
-                    modifier = Modifier.size(24.dp),
-                )
+                ControlLens(enabled = controlsEnabled) {
+                    Icon(
+                        imageVector = Icons.Filled.PhotoLibrary,
+                        contentDescription = "Open gallery",
+                        tint = tint,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun ControlLens(
+    enabled: Boolean,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(42.dp)
+            .background(Color.Black.copy(alpha = if (enabled) 0.36f else 0.18f), CircleShape)
+            .border(1.dp, Color.White.copy(alpha = if (enabled) 0.24f else 0.10f), CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        content()
     }
 }

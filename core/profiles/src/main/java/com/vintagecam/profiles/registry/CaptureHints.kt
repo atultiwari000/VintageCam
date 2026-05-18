@@ -8,4 +8,9 @@ data class CaptureHints(
     val flashBehavior: String = "OFF",
     val deviceLabel: String = "",
     val soundId: String = "default",
+    val computationalMode: String = "SINGLE",
+    val burstFrameCount: Int = 1,
+    val noiseReduction: Float = 0f,
+    val toneRecovery: Float = 0f,
+    val portraitEnhancement: Float = 0f,
 )

@@ -29,6 +29,11 @@ data class CameraProfile(
 	val assetStatusLabel: String = "AVAILABLE",
 	val effects: List<String> = emptyList(),
 	val lutAssetPath: String? = null,
+	val computationalMode: ComputationalMode = ComputationalMode.SINGLE,
+	val burstFrameCount: Int = 1,
+	val noiseReductionStrength: Float = 0f,
+	val toneRecoveryStrength: Float = 0f,
+	val portraitEnhancementStrength: Float = 0f,
 ) : Parcelable
 
 enum class Era {
@@ -62,6 +67,13 @@ enum class DateStampStyle {
 	YELLOW_CLASSIC,
 	RED_LED,
 	WHITE_LCD,
+}
+
+enum class ComputationalMode {
+	SINGLE,
+	BURST_NOSTALGIA,
+	BURST_HDR,
+	BURST_PORTRAIT,
 }
 
 enum class ShaderType {

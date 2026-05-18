@@ -117,6 +117,11 @@ class FilterRegistry @Inject constructor(
         flashBehavior = optString("flashBehavior", "OFF"),
         deviceLabel = optString("deviceLabel", ""),
         soundId = optString("soundId", "default"),
+        computationalMode = optString("computationalMode", "SINGLE"),
+        burstFrameCount = optInt("burstFrameCount", 1),
+        noiseReduction = optDouble("noiseReduction", 0.0).toFloat(),
+        toneRecovery = optDouble("toneRecovery", 0.0).toFloat(),
+        portraitEnhancement = optDouble("portraitEnhancement", 0.0).toFloat(),
     )
 
     private fun JSONArray?.toEffectList(): List<FilterEffect> {

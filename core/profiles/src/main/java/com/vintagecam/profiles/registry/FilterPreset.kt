@@ -2,6 +2,7 @@ package com.vintagecam.profiles.registry
 
 import com.vintagecam.profiles.AspectRatio
 import com.vintagecam.profiles.CameraProfile
+import com.vintagecam.profiles.ComputationalMode
 import com.vintagecam.profiles.DateStampStyle
 import com.vintagecam.profiles.Era
 import com.vintagecam.profiles.FlashBehavior
@@ -48,6 +49,11 @@ data class FilterPreset(
             assetStatusLabel = assets.assetStatus.name,
             effects = effectNames,
             lutAssetPath = assets.lut,
+            computationalMode = captureHints.computationalMode.toComputationalMode(),
+            burstFrameCount = captureHints.burstFrameCount.coerceIn(1, 8),
+            noiseReductionStrength = captureHints.noiseReduction.coerceIn(0f, 1f),
+            toneRecoveryStrength = captureHints.toneRecovery.coerceIn(0f, 1f),
+            portraitEnhancementStrength = captureHints.portraitEnhancement.coerceIn(0f, 1f),
         )
     }
 }
@@ -79,6 +85,9 @@ private fun String.toFlashBehavior(): FlashBehavior = runCatching { FlashBehavio
 
 private fun String.toDateStampStyle(): DateStampStyle = runCatching { DateStampStyle.valueOf(this) }
     .getOrDefault(DateStampStyle.NONE)
+
+private fun String.toComputationalMode(): ComputationalMode = runCatching { ComputationalMode.valueOf(this) }
+    .getOrDefault(ComputationalMode.SINGLE)
 
 private fun List<FilterEffect>.toShaderPipeline(): List<ShaderType> {
     val shaders = linkedSetOf<ShaderType>()

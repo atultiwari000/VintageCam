@@ -12,10 +12,12 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.LifecycleOwner
+import com.vintagecam.camera.capture.ComputationalBurstProcessor
 import com.vintagecam.camera.capture.GallerySaver
 import com.vintagecam.camera.capture.NativeFilterProcessor
 import com.vintagecam.camera.capture.toBitmap
 import com.vintagecam.profiles.CameraProfile
+import com.vintagecam.profiles.ComputationalMode
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -86,6 +88,41 @@ class CameraXEngineImpl @Inject constructor(
         profile: CameraProfile,
         capturedAtMillis: Long,
     ): RawCaptureResult {
+        val burstCount = profile.effectiveBurstFrameCount()
+        if (burstCount > 1) {
+            return captureRawBurst(profile, capturedAtMillis, burstCount)
+        }
+
+        val bitmap = captureBitmapFrame(profile)
+        return RawCaptureResult(bitmap, capturedAtMillis)
+    }
+
+    private suspend fun captureRawBurst(
+        profile: CameraProfile,
+        capturedAtMillis: Long,
+        burstCount: Int,
+    ): RawCaptureResult {
+        android.util.Log.d("CameraXEngine", "captureRawBurst: begin profile=${profile.id} frames=$burstCount")
+        val firstFrame = captureBitmapFrame(profile)
+        val accumulator = ComputationalBurstProcessor.begin(firstFrame, profile, burstCount)
+        firstFrame.recycle()
+
+        repeat(burstCount - 1) { index ->
+            val frame = captureBitmapFrame(profile)
+            accumulator.addFrame(frame)
+            frame.recycle()
+            if (index < burstCount - 2) delay(18)
+        }
+
+        val merged = withContext(Dispatchers.Default) {
+            accumulator.finish()
+        }
+
+        android.util.Log.d("CameraXEngine", "captureRawBurst: merged profile=${profile.id} frames=$burstCount")
+        return RawCaptureResult(merged, capturedAtMillis)
+    }
+
+    private suspend fun captureBitmapFrame(profile: CameraProfile): android.graphics.Bitmap {
         val capture = imageCapture ?: throw IllegalStateException("Camera not started")
 
         android.util.Log.d("CameraXEngine", "captureRawPhoto: begin profile=${profile.id}")
@@ -122,7 +159,7 @@ class CameraXEngineImpl @Inject constructor(
             }
         }
 
-        return RawCaptureResult(bitmap, capturedAtMillis)
+        return bitmap
     }
 
     override suspend fun processPhoto(
@@ -251,5 +288,11 @@ class CameraXEngineImpl @Inject constructor(
                 lifecycle.removeObserver(observer)
             }
         }
+    }
+
+    private fun CameraProfile.effectiveBurstFrameCount(): Int {
+        if (computationalMode == ComputationalMode.SINGLE) return 1
+        if (noiseReductionStrength <= 0f && toneRecoveryStrength <= 0f && portraitEnhancementStrength <= 0f) return 1
+        return burstFrameCount.coerceIn(1, 8)
     }
 }

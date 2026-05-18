@@ -1,12 +1,14 @@
 package com.vintagecam.camera.filter
 
 import com.vintagecam.imageprocessor.NativeImageProcessor
+import com.vintagecam.camera.capture.CapturePostProcessor
 import javax.inject.Inject
 import javax.inject.Singleton
 
 @Singleton
 class FilterFactory @Inject constructor(
     private val nativeProcessor: NativeImageProcessor,
+    private val postProcessor: CapturePostProcessor,
 ) {
     private val kotlinFilters = mapOf(
         "vhs_1985" to Vhs1985Filter(),
@@ -25,7 +27,7 @@ class FilterFactory @Inject constructor(
         return if (nativeProcessor.isAvailable()) {
             NativeCameraFilter(profileId, nativeProcessor)
         } else {
-            kotlinFilters[profileId] ?: kotlinFilters["vhs_1985"]!!
+            getKotlinFilter(profileId)
         }
     }
 
@@ -34,6 +36,6 @@ class FilterFactory @Inject constructor(
      * native availability (e.g. for testing or diagnostics).
      */
     fun getKotlinFilter(profileId: String): CameraFilter {
-        return kotlinFilters[profileId] ?: kotlinFilters["vhs_1985"]!!
+        return kotlinFilters[profileId] ?: ParameterCameraFilter(profileId, postProcessor)
     }
 }

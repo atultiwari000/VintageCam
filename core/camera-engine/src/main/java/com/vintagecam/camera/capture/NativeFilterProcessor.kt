@@ -35,7 +35,7 @@ class NativeFilterProcessor @Inject constructor(
         timestamp: Long,
     ): Bitmap {
         // Fast path: native YUV processing (zero JPEG round-trip)
-        if (nativeImageProcessor.isAvailable() && imageProxy.format == ImageFormat.YUV_420_888) {
+        if (nativeImageProcessor.isAvailable() && profile.id in nativeSupportedProfiles && imageProxy.format == ImageFormat.YUV_420_888) {
             val yBuffer = imageProxy.planes[0].buffer
             val uBuffer = imageProxy.planes[1].buffer
             val vBuffer = imageProxy.planes[2].buffer
@@ -91,7 +91,7 @@ class NativeFilterProcessor @Inject constructor(
         profile: CameraProfile,
         timestamp: Long,
     ): Bitmap {
-        if (nativeImageProcessor.isAvailable()) {
+        if (nativeImageProcessor.isAvailable() && profile.id in nativeSupportedProfiles) {
             val mutable = bitmap.copy(Bitmap.Config.ARGB_8888, true)
             val success = nativeImageProcessor.processBitmap(
                 bitmap = mutable,
@@ -108,5 +108,9 @@ class NativeFilterProcessor @Inject constructor(
 
         val filter = fallbackFactory.getKotlinFilter(profile.id)
         return filter.apply(bitmap, profile, timestamp)
+    }
+
+    private companion object {
+        val nativeSupportedProfiles = setOf("vhs_1985", "disposable_1998", "digicam_2003")
     }
 }

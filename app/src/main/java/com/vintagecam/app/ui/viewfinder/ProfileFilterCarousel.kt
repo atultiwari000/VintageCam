@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -112,7 +113,7 @@ private fun FilterCarouselItem(
 
     Column(
         modifier = Modifier
-            .width(104.dp)
+            .width(116.dp)
             .fillMaxHeight()
             .scale(scale)
             .clip(RoundedCornerShape(8.dp))
@@ -143,7 +144,7 @@ private fun FilterCarouselItem(
         )
 
         Text(
-            text = profileTagline(profile),
+            text = profile.deviceLabel.uppercase(),
             color = Color.White.copy(alpha = if (isSelected) 0.56f else 0.38f),
             fontSize = 7.sp,
             fontFamily = FontFamily.Monospace,
@@ -151,7 +152,35 @@ private fun FilterCarouselItem(
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
         )
+
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            FilterPill(profile.categoryLabel, Color.White.copy(alpha = 0.18f))
+            if (profile.tierLabel != "FREE") {
+                FilterPill(profile.tierLabel, tierColor(profile).copy(alpha = 0.28f))
+            } else if (profile.assetStatusLabel != "AVAILABLE") {
+                FilterPill("PROTO", Color(0xFFFFD45A).copy(alpha = 0.24f))
+            }
+        }
     }
+}
+
+@Composable
+private fun FilterPill(text: String, color: Color) {
+    Text(
+        text = text,
+        color = Color.White.copy(alpha = 0.72f),
+        fontSize = 6.sp,
+        fontFamily = FontFamily.Monospace,
+        maxLines = 1,
+        modifier = Modifier
+            .padding(top = 3.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(color)
+            .padding(horizontal = 4.dp, vertical = 1.dp),
+    )
 }
 
 @Composable
@@ -161,6 +190,11 @@ private fun ProfileEraIndicator(profile: CameraProfile, isSelected: Boolean) {
         "vhs_1985" -> "VHS"
         "disposable_1998" -> "ISO"
         "digicam_2003" -> "CCD"
+        "polaroid_1990" -> "600"
+        "super8_2020" -> "S8"
+        "cinestill_800t" -> "800T"
+        "trix_400", "ilford_hp5" -> "BW"
+        "cyanotype" -> "CY"
         else -> ""
     }
 
@@ -206,6 +240,37 @@ private fun ProfileEraIndicator(profile: CameraProfile, isSelected: Boolean) {
                         style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round),
                     )
                 }
+                "polaroid_1990" -> {
+                    drawRoundRect(
+                        color = Color(0xFFF4F0DD).copy(alpha = 0.86f),
+                        size = size,
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(4.dp.toPx()),
+                    )
+                    drawRect(
+                        color = indicatorColor.copy(alpha = 0.32f),
+                        topLeft = Offset(size.width * 0.18f, size.height * 0.14f),
+                        size = Size(size.width * 0.64f, size.height * 0.52f),
+                    )
+                }
+                "super8_2020" -> {
+                    drawRoundRect(
+                        color = Color.Black.copy(alpha = 0.45f),
+                        size = size,
+                        cornerRadius = androidx.compose.ui.geometry.CornerRadius(10.dp.toPx()),
+                    )
+                    drawRect(
+                        color = indicatorColor.copy(alpha = 0.30f),
+                        topLeft = Offset(size.width * 0.22f, size.height * 0.12f),
+                        size = Size(size.width * 0.56f, size.height * 0.76f),
+                    )
+                    repeat(4) { i ->
+                        drawCircle(
+                            color = Color.White.copy(alpha = 0.42f),
+                            radius = 2.dp.toPx(),
+                            center = Offset(size.width * 0.12f, size.height * (0.20f + i * 0.18f)),
+                        )
+                    }
+                }
                 else -> {
                     drawRoundRect(
                         color = indicatorColor.copy(alpha = 0.24f),
@@ -249,16 +314,18 @@ private fun profileAccent(profile: CameraProfile): Color = when (profile.era) {
     Era.TWO_THOUSANDS -> Color(0xFF66F0A0)
 }
 
+private fun tierColor(profile: CameraProfile): Color = when (profile.tierLabel) {
+    "SECRET" -> Color(0xFFFF4A9E)
+    "PRO" -> Color(0xFFFFD45A)
+    else -> Color.White
+}
+
 private fun shortName(profile: CameraProfile): String = when (profile.id) {
     "vhs_1985" -> "TAPE 85"
     "disposable_1998" -> "FUNSAVER"
     "digicam_2003" -> "CYBERSHOT"
+    "polaroid_1990" -> "POLAROID"
+    "super8_2020" -> "SUPER-8"
+    "cinestill_800t" -> "800T"
     else -> profile.displayName.uppercase()
-}
-
-private fun profileTagline(profile: CameraProfile): String = when (profile.id) {
-    "vhs_1985" -> "scanline"
-    "disposable_1998" -> "flash film"
-    "digicam_2003" -> "early CCD"
-    else -> profile.era.name.lowercase()
 }

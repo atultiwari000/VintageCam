@@ -1,0 +1,22 @@
+package com.vintagecam.profiles.registry
+
+enum class FilterEffect {
+    MASTER_GRADE,
+    LUT_3D,
+    BLUE_NOISE_GRAIN,
+    HALATION,
+    VHS_SCANLINES,
+    VHS_CHROMA_BLEED,
+    VHS_DROPOUT,
+    CORNER_BLUR,
+    JPEG_BLOCKS,
+    LIGHT_LEAK,
+    FRAME_OVERLAY,
+    GATE_WEAVE,
+    DATE_STAMP,
+    FLASH_FALLOFF,
+    GLITCH_SLICES,
+    INFRARED_SWAP,
+    DUOTONE,
+    CYANOTYPE_PAPER,
+}

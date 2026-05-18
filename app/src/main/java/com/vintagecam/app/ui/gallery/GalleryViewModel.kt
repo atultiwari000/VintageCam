@@ -3,6 +3,7 @@ package com.vintagecam.app.ui.gallery
 import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.vintagecam.app.export.SocialExportManager
 import com.vintagecam.profiles.data.PhotoStore
 import com.vintagecam.profiles.data.SavedPhoto
 import com.vintagecam.profiles.data.SessionManager
@@ -29,6 +30,7 @@ data class GalleryUiState(
 class GalleryViewModel @Inject constructor(
     private val photoStore: PhotoStore,
     private val sessionManager: SessionManager,
+    private val socialExportManager: SocialExportManager,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
@@ -132,6 +134,20 @@ class GalleryViewModel @Inject constructor(
                 }
             }
             _uiState.update { it.copy(deleting = false) }
+        }
+    }
+
+    fun shareCurrentPhoto() {
+        val photo = _uiState.value.fullScreenPhoto ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            socialExportManager.sharePhoto(photo)
+        }
+    }
+
+    fun shareCurrentRollStrip() {
+        val photos = _uiState.value.photos
+        viewModelScope.launch(Dispatchers.IO) {
+            socialExportManager.shareStrip(photos)
         }
     }
 }

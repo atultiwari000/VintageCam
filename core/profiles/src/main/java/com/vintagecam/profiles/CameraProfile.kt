@@ -23,6 +23,11 @@ data class CameraProfile(
 	val interlacedPreview: Boolean = false,
 	val previewVignetteAlpha: Int = 100,
 	val previewGrainIntensity: Float = 0.15f,
+	val deviceLabel: String = displayName,
+	val categoryLabel: String = era.name,
+	val tierLabel: String = "FREE",
+	val assetStatusLabel: String = "AVAILABLE",
+	val effects: List<String> = emptyList(),
 ) : Parcelable
 
 enum class Era {

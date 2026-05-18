@@ -8,9 +8,14 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.RadialGradient
 import android.graphics.Shader
+import android.graphics.Typeface
 import android.util.AttributeSet
 import android.view.View
 import com.vintagecam.profiles.CameraProfile
+import com.vintagecam.profiles.DateStampStyle
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import kotlin.math.hypot
 
 /**
@@ -34,6 +39,7 @@ class PreviewOverlayView @JvmOverloads constructor(
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         isDither = true
     }
+    private val timeFormat = SimpleDateFormat("yyyy.MM.dd", Locale.US)
 
     init {
         // Hardware acceleration for better performance
@@ -57,10 +63,23 @@ class PreviewOverlayView @JvmOverloads constructor(
         // Apply scanlines if this profile has them
         if (profile.interlacedPreview) {
             drawScanlines(canvas)
+            drawDropout(canvas)
         }
 
         // Apply color tint (subtle, so preview isn't too dark)
         drawColorTint(canvas, profile.colorMatrix)
+
+        val effects = profile.effects.toSet()
+        if ("LIGHT_LEAK" in effects) drawLightLeak(canvas)
+        if ("JPEG_BLOCKS" in effects) drawJpegBlocks(canvas)
+        if ("FRAME_OVERLAY" in effects) drawFrameHint(canvas, profile)
+        if (profile.dateStampStyle != DateStampStyle.NONE || "DATE_STAMP" in effects) {
+            drawDateStamp(canvas, profile.dateStampStyle)
+        }
+
+        if (profile.interlacedPreview || "VHS_DROPOUT" in effects) {
+            postInvalidateOnAnimation()
+        }
     }
 
     private fun drawVignette(canvas: Canvas, strength: Float) {
@@ -96,6 +115,84 @@ class PreviewOverlayView @JvmOverloads constructor(
             y += spacing
         }
 
+        paint.alpha = 255
+    }
+
+    private fun drawDropout(canvas: Canvas) {
+        val phase = (System.currentTimeMillis() / 1400L) % 7L
+        if (phase != 0L) return
+
+        paint.color = Color.WHITE
+        paint.alpha = 32
+        paint.strokeWidth = 2f
+        val y = ((System.currentTimeMillis() / 19L) % height.coerceAtLeast(1)).toFloat()
+        canvas.drawLine(0f, y, width.toFloat(), y + 8f, paint)
+        paint.alpha = 255
+    }
+
+    private fun drawLightLeak(canvas: Canvas) {
+        paint.shader = RadialGradient(
+            width * 0.96f,
+            height * 0.08f,
+            width * 0.46f,
+            intArrayOf(Color.argb(72, 255, 92, 30), Color.argb(30, 255, 215, 70), Color.TRANSPARENT),
+            floatArrayOf(0f, 0.45f, 1f),
+            Shader.TileMode.CLAMP,
+        )
+        paint.alpha = 255
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+        paint.shader = null
+    }
+
+    private fun drawJpegBlocks(canvas: Canvas) {
+        val block = (width / 34f).coerceAtLeast(12f)
+        paint.color = Color.WHITE
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 1f
+        paint.alpha = 16
+        var y = 0f
+        var row = 0
+        while (y < height) {
+            var x = 0f
+            var col = 0
+            while (x < width) {
+                if ((row + col) % 4 == 0) {
+                    canvas.drawRect(x, y, (x + block).coerceAtMost(width.toFloat()), (y + block).coerceAtMost(height.toFloat()), paint)
+                }
+                x += block
+                col++
+            }
+            y += block
+            row++
+        }
+        paint.style = Paint.Style.FILL
+        paint.alpha = 255
+    }
+
+    private fun drawFrameHint(canvas: Canvas, profile: CameraProfile) {
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = if (profile.id.contains("polaroid")) width * 0.08f else width * 0.025f
+        paint.color = if (profile.id.contains("polaroid")) Color.rgb(246, 242, 224) else Color.BLACK
+        paint.alpha = if (profile.id.contains("polaroid")) 170 else 150
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+        paint.style = Paint.Style.FILL
+        paint.alpha = 255
+    }
+
+    private fun drawDateStamp(canvas: Canvas, style: DateStampStyle) {
+        paint.shader = null
+        paint.color = when (style) {
+            DateStampStyle.RED_LED -> Color.rgb(255, 58, 44)
+            DateStampStyle.WHITE_LCD -> Color.WHITE
+            else -> Color.rgb(255, 214, 40)
+        }
+        paint.alpha = 230
+        paint.textSize = (height * 0.026f).coerceAtLeast(18f)
+        paint.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        paint.setShadowLayer(3f, 1f, 1f, Color.BLACK)
+        canvas.drawText(timeFormat.format(Date()), width * 0.055f, height * 0.93f, paint)
+        paint.clearShadowLayer()
+        paint.typeface = Typeface.DEFAULT
         paint.alpha = 255
     }
 

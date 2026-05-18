@@ -10,6 +10,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
+import com.vintagecam.profiles.registry.FilterRegistry
 import java.io.File
 import java.io.FileOutputStream
 import javax.inject.Inject
@@ -26,6 +27,7 @@ import javax.inject.Singleton
 @Singleton
 class PhotoStore @Inject constructor(
     @ApplicationContext private val context: Context,
+    private val filterRegistry: FilterRegistry,
 ) {
     private val photosDir: File
         get() = File(context.filesDir, "photos").also { it.mkdirs() }
@@ -190,12 +192,7 @@ class PhotoStore @Inject constructor(
         )
     }
 
-    private fun profileIdToName(id: String): String = when (id) {
-        "vhs_1985" -> "VHS-C 1985"
-        "disposable_1998" -> "FunSaver '98"
-        "digicam_2003" -> "CyberShot 2003"
-        else -> id
-    }
+    private fun profileIdToName(id: String): String = filterRegistry.getProfileName(id)
 
     private fun calculateInSampleSize(
         rawWidth: Int, rawHeight: Int,

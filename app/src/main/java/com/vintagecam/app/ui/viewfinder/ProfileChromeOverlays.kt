@@ -34,10 +34,12 @@ internal fun ProfileChromeOverlay(
     profile: CameraProfile,
     modifier: Modifier = Modifier,
 ) {
-    when (profile.viewfinderType) {
-        ViewfinderType.CRT -> VhsOverlay(modifier = modifier)
-        ViewfinderType.OPTICAL -> DisposableOverlay(modifier = modifier)
-        ViewfinderType.LCD -> DigicamOverlay(modifier = modifier)
+    when {
+        profile.id == "polaroid_1990" -> PolaroidOverlay(modifier = modifier)
+        profile.id == "super8_2020" -> Super8Overlay(modifier = modifier)
+        profile.viewfinderType == ViewfinderType.CRT -> VhsOverlay(modifier = modifier)
+        profile.viewfinderType == ViewfinderType.OPTICAL -> DisposableOverlay(profile = profile, modifier = modifier)
+        profile.viewfinderType == ViewfinderType.LCD -> DigicamOverlay(profile = profile, modifier = modifier)
     }
 }
 
@@ -94,10 +96,10 @@ private fun VhsOverlay(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun DisposableOverlay(modifier: Modifier = Modifier) {
+private fun DisposableOverlay(profile: CameraProfile, modifier: Modifier = Modifier) {
     Box(modifier = modifier.fillMaxSize()) {
         Text(
-            text = "1998.05.11",
+            text = if (profile.dateStampStyle.name.contains("YELLOW")) "1998.05.11" else profile.deviceLabel.uppercase(),
             modifier = Modifier
                 .align(Alignment.TopStart)
                 .padding(16.dp),
@@ -169,5 +171,92 @@ private fun DigicamOverlay(modifier: Modifier = Modifier) {
                 ),
             )
         }
+    }
+}
+
+@Composable
+private fun DigicamOverlay(profile: CameraProfile, modifier: Modifier = Modifier) {
+    Box(modifier = modifier.fillMaxSize()) {
+        Text(
+            text = "READY",
+            color = Color.Green,
+            fontSize = 10.sp,
+            fontFamily = VintageCamTypography.digitalFont,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(12.dp),
+        )
+
+        Text(
+            text = profile.deviceLabel.uppercase(),
+            color = Color.White.copy(alpha = 0.72f),
+            fontSize = 9.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(12.dp),
+        )
+
+        Canvas(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(120.dp)
+                .align(Alignment.BottomCenter),
+        ) {
+            drawRect(
+                brush = Brush.verticalGradient(
+                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.25f)),
+                ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun PolaroidOverlay(modifier: Modifier = Modifier) {
+    Box(modifier = modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.Center)
+                .fillMaxWidth(0.74f)
+                .fillMaxHeight(0.58f)
+                .border(10.dp, Color(0xFFF4F0DD).copy(alpha = 0.80f), RoundedCornerShape(2.dp)),
+        )
+        Text(
+            text = "10",
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(16.dp),
+            color = Color(0xFFF4F0DD),
+            fontSize = 16.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+        )
+    }
+}
+
+@Composable
+private fun Super8Overlay(modifier: Modifier = Modifier) {
+    Box(modifier = modifier.fillMaxSize()) {
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            drawRect(Color.Black.copy(alpha = 0.18f))
+            val x = size.width * 0.055f
+            var y = size.height * 0.16f
+            while (y < size.height * 0.86f) {
+                drawCircle(Color.Black.copy(alpha = 0.72f), radius = 6.dp.toPx(), center = Offset(x, y))
+                y += size.height * 0.11f
+            }
+        }
+        Text(
+            text = "18 FPS",
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .padding(16.dp),
+            color = Color(0xFFFFD45A),
+            fontSize = 11.sp,
+            fontFamily = FontFamily.Monospace,
+            fontWeight = FontWeight.Bold,
+        )
     }
 }

@@ -31,6 +31,7 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.CircularProgressIndicator
@@ -99,12 +100,14 @@ fun GalleryScreen(
                 onPrevious = viewModel::navigatePrevious,
                 onNext = viewModel::navigateNext,
                 onDelete = viewModel::deleteCurrentPhoto,
+                onShare = viewModel::shareCurrentPhoto,
             )
         } else {
             FilmstripGallery(
                 photos = uiState.photos,
                 onPhotoClick = viewModel::openFullScreen,
                 onClose = onClose,
+                onShareStrip = viewModel::shareCurrentRollStrip,
             )
         }
     }
@@ -117,6 +120,7 @@ private fun FilmstripGallery(
     photos: List<SavedPhoto>,
     onPhotoClick: (Int) -> Unit,
     onClose: () -> Unit,
+    onShareStrip: () -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         // Header
@@ -140,6 +144,17 @@ private fun FilmstripGallery(
                     color = Color.White.copy(alpha = 0.4f),
                     fontSize = 10.sp,
                 )
+                IconButton(
+                    onClick = onShareStrip,
+                    enabled = photos.any { !it.isProcessing && it.errorMessage == null },
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Share photo strip",
+                        tint = Color.White.copy(alpha = 0.72f),
+                        modifier = Modifier.size(19.dp),
+                    )
+                }
                 IconButton(onClick = onClose) {
                     Icon(
                         imageVector = Icons.Default.Close,
@@ -261,6 +276,7 @@ private fun FullScreenViewer(
     onPrevious: () -> Unit,
     onNext: () -> Unit,
     onDelete: () -> Unit,
+    onShare: () -> Unit,
 ) {
     val photo = uiState.fullScreenPhoto ?: return
 
@@ -329,16 +345,29 @@ private fun FullScreenViewer(
                 )
             }
 
-            IconButton(
-                onClick = onDelete,
-                enabled = !uiState.deleting && !photo.isProcessing,
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Delete,
-                    contentDescription = "Delete photo",
-                    tint = Color(0xFFFF4444),
-                    modifier = Modifier.size(22.dp),
-                )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = onShare,
+                    enabled = !photo.isProcessing && photo.errorMessage == null,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Share,
+                        contentDescription = "Share photo",
+                        tint = Color.White,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+                IconButton(
+                    onClick = onDelete,
+                    enabled = !uiState.deleting && !photo.isProcessing,
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Delete,
+                        contentDescription = "Delete photo",
+                        tint = Color(0xFFFF4444),
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
             }
         }
 

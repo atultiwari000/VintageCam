@@ -44,8 +44,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.vintagecam.app.ui.theme.VintageCamTypography
+import com.vintagecam.profiles.captureTierInfo
 import com.vintagecam.profiles.CameraProfile
-import com.vintagecam.profiles.ComputationalMode
 import com.vintagecam.profiles.Era
 import kotlinx.coroutines.launch
 
@@ -166,19 +166,17 @@ private fun CompactFilterDock(
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.weight(1f, fill = false),
                     )
-                    if (selected.usesComputationalCapture()) {
-                        Text(
-                            text = "HQ${selected.burstFrameCount}",
-                            color = Color(0xFFBCEBFF),
-                            fontSize = 7.sp,
-                            fontFamily = FontFamily.Monospace,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(3.dp))
-                                .background(Color(0xFF15657A).copy(alpha = 0.58f))
-                                .padding(horizontal = 3.dp, vertical = 1.dp),
-                        )
-                    }
+                    Text(
+                        text = selected.captureTierLabel(),
+                        color = selected.captureTierTextColor(),
+                        fontSize = 7.sp,
+                        fontFamily = FontFamily.Monospace,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(3.dp))
+                            .background(selected.captureTierBackgroundColor())
+                            .padding(horizontal = 3.dp, vertical = 1.dp),
+                    )
                 }
                 Text(
                     text = selected.deviceLabel.uppercase(),
@@ -297,9 +295,7 @@ private fun FilterCarouselItem(
             horizontalArrangement = Arrangement.spacedBy(4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            if (profile.usesComputationalCapture()) {
-                FilterPill("HQ ${profile.burstFrameCount}F", Color(0xFF28B8D8).copy(alpha = 0.30f))
-            }
+            FilterPill(profile.captureTierLabel(), profile.captureTierBackgroundColor())
             FilterPill(profile.categoryLabel, Color.White.copy(alpha = 0.18f))
             if (profile.tierLabel != "FREE") {
                 FilterPill(profile.tierLabel, tierColor(profile).copy(alpha = 0.28f))
@@ -473,6 +469,21 @@ private fun shortName(profile: CameraProfile): String = when (profile.id) {
     else -> profile.displayName.uppercase()
 }
 
-private fun CameraProfile.usesComputationalCapture(): Boolean {
-    return computationalMode != ComputationalMode.SINGLE && burstFrameCount > 1
+private fun CameraProfile.captureTierLabel(): String {
+    val captureTier = captureTierInfo()
+    return if (captureTier.isComputational) "HQ ${captureTier.frameCount}F" else "LOW"
+}
+
+private fun CameraProfile.captureTierBackgroundColor(): Color {
+    val captureTier = captureTierInfo()
+    return if (captureTier.isComputational) {
+        Color(0xFF28B8D8).copy(alpha = 0.30f)
+    } else {
+        Color(0xFF6E7E92).copy(alpha = 0.28f)
+    }
+}
+
+private fun CameraProfile.captureTierTextColor(): Color {
+    val captureTier = captureTierInfo()
+    return if (captureTier.isComputational) Color(0xFFBCEBFF) else Color(0xFFD8DEE8)
 }

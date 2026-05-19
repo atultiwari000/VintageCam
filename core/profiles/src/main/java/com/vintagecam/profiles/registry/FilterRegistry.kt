@@ -64,16 +64,19 @@ class FilterRegistry @Inject constructor(
     private fun JSONObject.toFilterPreset(): FilterPreset {
         val parametersJson = getJSONObject("parameters")
         val assetsJson = optJSONObject("assets") ?: JSONObject()
+        val effects = optJSONArray("effects").toEffectList()
         val hintsJson = optJSONObject("captureHints") ?: JSONObject()
+        val category = enumValue(optString("category"), FilterCategory.ERA_1990S)
+        val id = getString("id")
         return FilterPreset(
-            id = getString("id"),
+            id = id,
             name = getString("name"),
-            category = enumValue(optString("category"), FilterCategory.ERA_1990S),
+            category = category,
             tier = enumValue(optString("tier"), FilterTier.FREE),
             parameters = parametersJson.toFilterParameters(),
             assets = assetsJson.toFilterAssets(),
-            captureHints = hintsJson.toCaptureHints(),
-            effects = optJSONArray("effects").toEffectList(),
+            captureHints = hintsJson.toCaptureHints(id, category, effects),
+            effects = effects,
             unlockCondition = optJSONObject("unlockCondition")?.let {
                 UnlockCondition(type = it.optString("type"), value = it.optString("value"))
             },
@@ -109,20 +112,27 @@ class FilterRegistry @Inject constructor(
         )
     }
 
-    private fun JSONObject.toCaptureHints(): CaptureHints = CaptureHints(
-        latencyMs = optLong("latencyMs", 80L),
-        aspectRatio = optString("aspectRatio", "RATIO_4_3"),
-        viewfinderType = optString("viewfinderType", "OPTICAL"),
-        dateStampStyle = optString("dateStampStyle", "NONE"),
-        flashBehavior = optString("flashBehavior", "OFF"),
-        deviceLabel = optString("deviceLabel", ""),
-        soundId = optString("soundId", "default"),
-        computationalMode = optString("computationalMode", "SINGLE"),
-        burstFrameCount = optInt("burstFrameCount", 1),
-        noiseReduction = optDouble("noiseReduction", 0.0).toFloat(),
-        toneRecovery = optDouble("toneRecovery", 0.0).toFloat(),
-        portraitEnhancement = optDouble("portraitEnhancement", 0.0).toFloat(),
-    )
+    private fun JSONObject.toCaptureHints(
+        presetId: String,
+        category: FilterCategory,
+        effects: List<FilterEffect>,
+    ): CaptureHints {
+        val policy = ComputePolicyDecider.decide(presetId, category, effects)
+        return CaptureHints(
+            latencyMs = optLong("latencyMs", 80L),
+            aspectRatio = optString("aspectRatio", "RATIO_4_3"),
+            viewfinderType = optString("viewfinderType", "OPTICAL"),
+            dateStampStyle = optString("dateStampStyle", "NONE"),
+            flashBehavior = optString("flashBehavior", "OFF"),
+            deviceLabel = optString("deviceLabel", ""),
+            soundId = optString("soundId", "default"),
+            computationalMode = optString("computationalMode", policy.mode),
+            burstFrameCount = optInt("burstFrameCount", policy.frames),
+            noiseReduction = optDouble("noiseReduction", policy.noiseReduction.toDouble()).toFloat(),
+            toneRecovery = optDouble("toneRecovery", policy.toneRecovery.toDouble()).toFloat(),
+            portraitEnhancement = optDouble("portraitEnhancement", policy.portraitEnhancement.toDouble()).toFloat(),
+        )
+    }
 
     private fun JSONArray?.toEffectList(): List<FilterEffect> {
         if (this == null) return listOf(FilterEffect.MASTER_GRADE)

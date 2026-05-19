@@ -11,6 +11,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import com.vintagecam.app.audio.CameraSoundEngine
 import com.vintagecam.camera.CameraEngine
 import com.vintagecam.profiles.CameraProfile
+import com.vintagecam.profiles.captureTierInfo
 import com.vintagecam.profiles.data.PhotoStore
 import com.vintagecam.profiles.data.SavedPhoto
 import com.vintagecam.profiles.data.ProfileRepository
@@ -154,7 +155,7 @@ class ViewfinderViewModel @Inject constructor(
                 val totalStartMs = SystemClock.elapsedRealtime()
                 android.util.Log.d(
                     "ViewfinderViewModel",
-                    "onCapture: start profile=${profile.id} mode=${profile.computationalMode} frames=${profile.burstFrameCount}",
+                    "onCapture: start profile=${profile.id} tier=${profile.captureTierInfo().tier} frames=${profile.captureTierInfo().frameCount}",
                 )
                 sessionManager.addCapturedPhoto(pendingPhoto)
 

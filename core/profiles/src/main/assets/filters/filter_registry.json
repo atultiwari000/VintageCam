@@ -304,6 +304,26 @@
       "unlockCondition": { "type": "gesture", "value": "shake" }
     },
     {
+      "id": "ascii_terminal",
+      "name": "ASCII Terminal",
+      "category": "ARTISTIC",
+      "tier": "FREE",
+      "parameters": { "grain": 0.02, "vignette": 0.18, "vignetteMid": 0.54, "vignetteOuter": 0.94, "fade": 0.0, "saturation": 0.0, "contrast": 1.36, "halation": 0.0, "chromaticAberration": 0.0, "barrel": 0.0, "tintShadow": [0.0, 0.0, 0.0], "tintHighlight": [0.0, 0.0, 0.0], "lutStrength": 0.0, "grainSize": "DIGITAL", "crushedBlacks": 0.16 },
+      "assets": { "assetStatus": "AVAILABLE" },
+      "effects": ["MASTER_GRADE", "ASCII_CHAR_PHOTO"],
+      "captureHints": { "latencyMs": 50, "aspectRatio": "RATIO_16_9", "viewfinderType": "LCD", "deviceLabel": "Terminal Art", "soundId": "digicam" }
+    },
+    {
+      "id": "cool_contact_print",
+      "name": "Cool Contact",
+      "category": "ARTISTIC",
+      "tier": "FREE",
+      "parameters": { "grain": 0.22, "vignette": 0.20, "vignetteMid": 0.50, "vignetteOuter": 0.90, "fade": 0.10, "saturation": 0.62, "contrast": 1.08, "halation": 0.02, "chromaticAberration": 0.001, "barrel": 0.0, "tintShadow": [-0.02, 0.00, 0.05], "tintHighlight": [0.05, 0.03, 0.01], "lutStrength": 0.0, "grainSize": "FINE", "crushedBlacks": 0.08, "shadowNoiseIntensity": 0.08 },
+      "assets": { "assetStatus": "AVAILABLE" },
+      "effects": ["MASTER_GRADE", "BLUE_NOISE_GRAIN", "COOL_VINTAGE_PRINT"],
+      "captureHints": { "latencyMs": 70, "aspectRatio": "RATIO_1_1", "viewfinderType": "LCD", "deviceLabel": "Cool Print", "soundId": "default", "computationalMode": "BURST_PORTRAIT", "burstFrameCount": 3, "noiseReduction": 0.24, "toneRecovery": 0.22, "portraitEnhancement": 0.18 }
+    },
+    {
       "id": "cyanotype",
       "name": "Cyanotype",
       "category": "ARTISTIC",

@@ -78,7 +78,7 @@ internal fun CaptureArea(
 
         Text(
             text = when (cameraState) {
-                CameraState.Capturing -> if (profile?.usesComputationalCapture() == true) "MERGE ${profile.burstFrameCount}F" else "BUSY"
+                CameraState.Capturing -> if (profile?.usesComputationalCapture() == true) "SHOT ${profile.burstFrameCount}F" else "BUSY"
                 CameraState.Processing -> "PROC"
                 CameraState.Previewing -> when {
                     developingCount > 0 -> "DEV $developingCount"

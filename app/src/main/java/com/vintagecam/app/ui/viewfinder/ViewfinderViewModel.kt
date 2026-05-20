@@ -3,6 +3,7 @@ package com.vintagecam.app.ui.viewfinder
 import android.content.Context
 import android.os.SystemClock
 import android.view.View
+import androidx.camera.view.PreviewView
 import androidx.camera.core.Preview
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ViewModel
@@ -127,8 +128,10 @@ class ViewfinderViewModel @Inject constructor(
     }
 
     fun onToggleFlash() {
+        val enabled = !_uiState.value.flashEnabled
+        cameraEngine.setFlashEnabled(enabled)
         _uiState.update { current ->
-            current.copy(flashEnabled = !current.flashEnabled)
+            current.copy(flashEnabled = enabled)
         }
     }
 
@@ -136,11 +139,24 @@ class ViewfinderViewModel @Inject constructor(
         cameraEngine.switchCamera()
     }
 
+    fun onFocusTap(previewView: PreviewView, x: Float, y: Float) {
+        cameraEngine.focusAt(previewView, x, y)
+    }
+
     fun onCapture() {
-        if (_uiState.value.cameraState != CameraState.Previewing) return
+        val state = _uiState.value
+        if (state.cameraState != CameraState.Previewing) return
+        val profile = profiles.getOrNull(state.currentProfileIndex) ?: return
+        _uiState.update { current ->
+            if (current.cameraState == CameraState.Previewing) {
+                current.copy(cameraState = CameraState.Capturing)
+            } else {
+                current
+            }
+        }
+        if (_uiState.value.cameraState != CameraState.Capturing) return
 
         viewModelScope.launch {
-            val profile = profiles.getOrNull(_uiState.value.currentProfileIndex) ?: return@launch
             val timestamp = System.currentTimeMillis()
             val pendingPhoto = SavedPhoto(
                 id = "${profile.id}_$timestamp",
@@ -151,6 +167,7 @@ class ViewfinderViewModel @Inject constructor(
                 isProcessing = true,
             )
 
+            var rawCaptured = false
             try {
                 val totalStartMs = SystemClock.elapsedRealtime()
                 android.util.Log.d(
@@ -159,7 +176,6 @@ class ViewfinderViewModel @Inject constructor(
                 )
                 sessionManager.addCapturedPhoto(pendingPhoto)
 
-                _uiState.update { it.copy(cameraState = CameraState.Capturing) }
                 cameraSoundEngine.playShutter(profile)
                 delay(profile.captureLatencyMs)
 
@@ -167,11 +183,12 @@ class ViewfinderViewModel @Inject constructor(
                 val raw = cameraEngine.captureRawPhoto(profile, timestamp)
                 val rawMs = SystemClock.elapsedRealtime() - rawStartMs
                 _uiState.update { it.copy(cameraState = CameraState.Previewing) }
+                rawCaptured = true
 
                 android.util.Log.d("ViewfinderViewModel", "onCapture: raw frame captured id=${pendingPhoto.id} rawMs=$rawMs")
 
                 val processStartMs = SystemClock.elapsedRealtime()
-                val processed = cameraEngine.processPhoto(raw.bitmap, profile, raw.capturedAtMillis)
+                val processed = cameraEngine.processPhoto(raw, profile)
                 val processMs = SystemClock.elapsedRealtime() - processStartMs
 
                 val saveStartMs = SystemClock.elapsedRealtime()
@@ -202,7 +219,9 @@ class ViewfinderViewModel @Inject constructor(
                         errorMessage = e.message ?: "Capture failed",
                     ),
                 )
-                _uiState.update { it.copy(cameraState = CameraState.Previewing) }
+                if (!rawCaptured) {
+                    _uiState.update { it.copy(cameraState = CameraState.Previewing) }
+                }
             }
         }
     }

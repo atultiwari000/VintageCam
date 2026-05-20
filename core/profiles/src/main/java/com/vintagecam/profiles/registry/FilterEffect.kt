@@ -19,4 +19,6 @@ enum class FilterEffect {
     INFRARED_SWAP,
     DUOTONE,
     CYANOTYPE_PAPER,
+    ASCII_CHAR_PHOTO,
+    COOL_VINTAGE_PRINT,
 }

@@ -80,6 +80,8 @@ class PreviewOverlayView @JvmOverloads constructor(
         if ("LIGHT_LEAK" in effects) drawLightLeak(canvas)
         if ("JPEG_BLOCKS" in effects) drawJpegBlocks(canvas)
         if ("GLITCH_SLICES" in effects) drawGlitchSlices(canvas)
+        if ("ASCII_CHAR_PHOTO" in effects) drawAsciiPreview(canvas)
+        if ("COOL_VINTAGE_PRINT" in effects) drawCoolPrintPreview(canvas)
         if ("FRAME_OVERLAY" in effects) drawFrameHint(canvas, profile)
         if (profile.dateStampStyle != DateStampStyle.NONE || "DATE_STAMP" in effects) {
             drawDateStamp(canvas, profile.dateStampStyle)
@@ -114,6 +116,99 @@ class PreviewOverlayView @JvmOverloads constructor(
         paint.alpha = (strength * 120).toInt() // 0–120 alpha (subtle for preview)
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
         paint.shader = null
+        paint.alpha = 255
+    }
+
+    private fun drawAsciiPreview(canvas: Canvas) {
+        paint.shader = null
+        paint.style = Paint.Style.FILL
+        paint.color = Color.BLACK
+        paint.alpha = 138
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+
+        paint.typeface = Typeface.MONOSPACE
+        paint.textSize = (width / 90f).coerceAtLeast(12f)
+        paint.alpha = 150
+        val chars = charArrayOf('@', '#', '$', '%', '&', '*', '+')
+        val stepX = paint.textSize * 0.62f
+        val stepY = paint.textSize * 1.12f
+        var y = stepY
+        var row = 0
+        while (y < height) {
+            var x = 0f
+            var col = 0
+            while (x < width) {
+                val pulse = ((row * 17 + col * 11 + System.currentTimeMillis() / 140L) % 19).toInt()
+                if (pulse > 2) {
+                    val c = chars[(row + col + pulse) % chars.size]
+                    paint.color = Color.rgb(0, 236 - pulse * 3, 76)
+                    canvas.drawText(c.toString(), x, y, paint)
+                }
+                x += stepX
+                col++
+            }
+            y += stepY
+            row++
+        }
+        paint.typeface = Typeface.DEFAULT
+        paint.alpha = 255
+        postInvalidateOnAnimation()
+    }
+
+    private fun drawCoolPrintPreview(canvas: Canvas) {
+        paint.shader = null
+        paint.style = Paint.Style.FILL
+        paint.color = Color.argb(178, 4, 5, 6)
+        canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+
+        paint.strokeWidth = 1f
+        val spacing = (width / 160f).coerceAtLeast(3f)
+        paint.color = Color.argb(22, 255, 255, 255)
+        var x = 0f
+        while (x < width) {
+            canvas.drawLine(x, 0f, x, height.toFloat(), paint)
+            x += spacing
+        }
+        paint.color = Color.argb(16, 18, 14, 18)
+        var y = 0f
+        while (y < height) {
+            canvas.drawLine(0f, y, width.toFloat(), y, paint)
+            y += spacing * 1.35f
+        }
+
+        paint.style = Paint.Style.FILL
+        val border = (width * 0.030f).coerceAtLeast(9f)
+        val topFrameBottom = height * 0.405f
+        val stripTop = height * 0.423f
+        val stripBottom = height * 0.488f
+        val lowerTop = height * 0.488f
+        paint.color = Color.argb(64, 210, 204, 214)
+        canvas.drawRect(border, border, width - border, topFrameBottom, paint)
+        canvas.save()
+        canvas.rotate(-91.5f, width / 2f, (lowerTop + height - border) * 0.5f)
+        paint.color = Color.argb(54, 214, 209, 218)
+        canvas.drawRect(
+            width * 0.08f,
+            height * 0.05f,
+            width * 0.92f,
+            height * 0.86f,
+            paint,
+        )
+        canvas.restore()
+
+        paint.color = Color.argb(220, 4, 5, 6)
+        canvas.drawRect(0f, 0f, width.toFloat(), border, paint)
+        canvas.drawRect(0f, topFrameBottom, width.toFloat(), stripTop, paint)
+        canvas.drawRect(0f, stripTop, width.toFloat(), stripBottom, paint)
+        canvas.drawRect(0f, height - border, width.toFloat(), height.toFloat(), paint)
+        canvas.drawRect(0f, 0f, border, height.toFloat(), paint)
+        canvas.drawRect(width - border, 0f, width.toFloat(), height.toFloat(), paint)
+
+        paint.color = Color.argb(190, 236, 164, 46)
+        paint.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        paint.textSize = ((stripBottom - stripTop) * 0.43f).coerceAtLeast(16f)
+        canvas.drawText("UNFOLD 40", width * 0.15f, stripTop + (stripBottom - stripTop) * 0.63f, paint)
+        paint.typeface = Typeface.DEFAULT
         paint.alpha = 255
     }
 

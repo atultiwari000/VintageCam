@@ -11,6 +11,7 @@ import android.graphics.PorterDuff
 import android.graphics.PorterDuffXfermode
 import android.graphics.RadialGradient
 import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.Typeface
 import com.vintagecam.profiles.CameraProfile
@@ -125,7 +126,9 @@ class CapturePostProcessor @Inject constructor(
         if ("JPEG_BLOCKS" in effects) result = applyJpegBlocks(result)
         if ("GLITCH_SLICES" in effects) result = applyGlitchSlices(result)
         if ("DUOTONE" in effects || "CYANOTYPE_PAPER" in effects) result = applyDuotone(result, profile)
+        if ("COOL_VINTAGE_PRINT" in effects) result = applyCoolVintagePrint(result)
         if ("FRAME_OVERLAY" in effects) result = applyFrameOverlay(result, profile)
+        if ("ASCII_CHAR_PHOTO" in effects) result = applyAsciiCharPhoto(result)
 
         return result
     }
@@ -331,6 +334,292 @@ class CapturePostProcessor @Inject constructor(
         }
         return bitmap
     }
+
+    private fun applyAsciiCharPhoto(bitmap: Bitmap): Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
+        val sampleWidth = (width / 160).coerceAtLeast(5)
+        val sampleHeight = (sampleWidth * 1.72f).toInt().coerceAtLeast(8)
+        val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(result)
+        canvas.drawColor(Color.BLACK)
+
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            typeface = Typeface.MONOSPACE
+            textSize = sampleHeight * 0.92f
+            isSubpixelText = false
+        }
+        val ramp = charArrayOf('.', ':', '-', '+', '*', '#', '$', '%', '@')
+        val threshold = 42f
+
+        var y = 0
+        while (y < height) {
+            var x = 0
+            while (x < width) {
+                val stats = sampleCell(pixels, width, height, x, y, sampleWidth, sampleHeight)
+                if (stats.luma > threshold) {
+                    val normalized = ((stats.luma - threshold) / (255f - threshold)).coerceIn(0f, 1f)
+                    val charIndex = (normalized * (ramp.size - 1)).toInt().coerceIn(0, ramp.lastIndex)
+                    val green = (142 + normalized * 113f).toInt().coerceIn(0, 255)
+                    val alpha = (145 + normalized * 110f).toInt().coerceIn(0, 255)
+                    paint.color = Color.argb(alpha, 0, green, 72)
+                    canvas.drawText(ramp[charIndex].toString(), x.toFloat(), (y + sampleHeight).toFloat(), paint)
+                }
+                x += sampleWidth
+            }
+            y += sampleHeight
+        }
+
+        val glowPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(28, 0, 255, 78)
+            style = Paint.Style.STROKE
+            strokeWidth = (height / 420f).coerceAtLeast(1f)
+        }
+        var scanY = 0f
+        val scanSpacing = (sampleHeight * 0.64f).coerceAtLeast(5f)
+        while (scanY < height) {
+            canvas.drawLine(0f, scanY, width.toFloat(), scanY, glowPaint)
+            scanY += scanSpacing
+        }
+
+        if (bitmap != result && !bitmap.isRecycled) bitmap.recycle()
+        return result
+    }
+
+    private fun applyCoolVintagePrint(bitmap: Bitmap): Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+
+        for (i in pixels.indices) {
+            val pixel = pixels[i]
+            val a = pixel ushr 24
+            val r0 = Color.red(pixel)
+            val g0 = Color.green(pixel)
+            val b0 = Color.blue(pixel)
+            val luma = (r0 * 0.299f + g0 * 0.587f + b0 * 0.114f).coerceIn(0f, 255f)
+            val tone = toneCurveForCoolPrint(luma / 255f)
+            val chroma = 0.34f
+            val warmSkinBias = if (r0 > b0 && r0 >= g0 * 0.82f && g0 > b0 * 0.70f) 1f else 0f
+
+            val coolR = 32f + tone * 208f
+            val coolG = 36f + tone * 198f
+            val coolB = 48f + tone * 190f
+            val preserveR = luma + (r0 - luma) * chroma
+            val preserveG = luma + (g0 - luma) * chroma
+            val preserveB = luma + (b0 - luma) * chroma
+
+            var r = mix(coolR, preserveR + warmSkinBias * 10f, 0.42f)
+            var g = mix(coolG, preserveG + warmSkinBias * 5f, 0.42f)
+            var b = mix(coolB, preserveB - warmSkinBias * 4f, 0.42f)
+
+            val shadowCool = (1f - tone).coerceIn(0f, 1f)
+            r -= shadowCool * 7f
+            g -= shadowCool * 3f
+            b += shadowCool * 11f
+
+            pixels[i] = Color.argb(
+                a,
+                r.toInt().coerceIn(0, 255),
+                g.toInt().coerceIn(0, 255),
+                b.toInt().coerceIn(0, 255),
+            )
+        }
+
+        bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+
+        val result = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(result)
+        canvas.drawColor(Color.rgb(5, 6, 7))
+
+        val imagePaint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG or Paint.DITHER_FLAG)
+        val edge = (width * 0.030f).coerceAtLeast(10f)
+        val topFrame = RectF(edge, edge, width - edge, height * 0.405f)
+        val lowerFrame = RectF(edge, height * 0.488f, width - edge, height - edge)
+        val dividerTop = height * 0.423f
+        val dividerBottom = height * 0.488f
+
+        drawCenterCropBitmap(canvas, bitmap, topFrame, imagePaint, zoom = 1.34f, centerY = 0.44f)
+
+        canvas.save()
+        canvas.clipRect(lowerFrame)
+        val cx = lowerFrame.centerX()
+        val cy = lowerFrame.centerY()
+        canvas.rotate(-91.5f, cx, cy)
+        val rotatedTarget = RectF(
+            cx - lowerFrame.height() * 0.56f,
+            cy - lowerFrame.width() * 0.58f,
+            cx + lowerFrame.height() * 0.56f,
+            cy + lowerFrame.width() * 0.58f,
+        )
+        drawCenterCropBitmap(canvas, bitmap, rotatedTarget, imagePaint, zoom = 1.04f, centerY = 0.52f)
+        canvas.restore()
+
+        val framePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.FILL
+            color = Color.rgb(4, 5, 6)
+        }
+        canvas.drawRect(0f, 0f, width.toFloat(), topFrame.top, framePaint)
+        canvas.drawRect(0f, topFrame.bottom, width.toFloat(), dividerTop, framePaint)
+        canvas.drawRect(0f, dividerTop, width.toFloat(), dividerBottom, framePaint)
+        canvas.drawRect(0f, lowerFrame.bottom, width.toFloat(), height.toFloat(), framePaint)
+        canvas.drawRect(0f, 0f, edge, height.toFloat(), framePaint)
+        canvas.drawRect(width - edge, 0f, width.toFloat(), height.toFloat(), framePaint)
+
+        val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(205, 222, 152, 42)
+            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+            textSize = ((dividerBottom - dividerTop) * 0.43f).coerceAtLeast(16f)
+        }
+        canvas.drawText("UNFOLD 40 C-3", width * 0.15f, dividerTop + (dividerBottom - dividerTop) * 0.63f, labelPaint)
+
+        val markerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.argb(210, 216, 143, 34)
+            style = Paint.Style.FILL
+        }
+        val arrowY = dividerTop + (dividerBottom - dividerTop) * 0.52f
+        canvas.drawPath(android.graphics.Path().apply {
+            moveTo(width * 0.055f, arrowY - height * 0.010f)
+            lineTo(width * 0.085f, arrowY)
+            lineTo(width * 0.055f, arrowY + height * 0.010f)
+            close()
+        }, markerPaint)
+        canvas.drawPath(android.graphics.Path().apply {
+            moveTo(width * 0.855f, arrowY - height * 0.010f)
+            lineTo(width * 0.885f, arrowY)
+            lineTo(width * 0.855f, arrowY + height * 0.010f)
+            close()
+        }, markerPaint)
+
+        applyContactSheetTexture(result)
+        if (!bitmap.isRecycled) bitmap.recycle()
+        return result
+    }
+
+    private fun drawCenterCropBitmap(
+        canvas: Canvas,
+        bitmap: Bitmap,
+        dst: RectF,
+        paint: Paint,
+        zoom: Float,
+        centerY: Float,
+    ) {
+        val dstRatio = dst.width() / dst.height()
+        var cropWidth = bitmap.width.toFloat()
+        var cropHeight = cropWidth / dstRatio
+        if (cropHeight > bitmap.height) {
+            cropHeight = bitmap.height.toFloat()
+            cropWidth = cropHeight * dstRatio
+        }
+        cropWidth /= zoom.coerceAtLeast(1f)
+        cropHeight /= zoom.coerceAtLeast(1f)
+
+        val left = ((bitmap.width - cropWidth) * 0.50f).coerceIn(0f, bitmap.width - cropWidth)
+        val top = ((bitmap.height - cropHeight) * centerY).coerceIn(0f, bitmap.height - cropHeight)
+        val src = Rect(
+            left.toInt(),
+            top.toInt(),
+            (left + cropWidth).toInt().coerceAtMost(bitmap.width),
+            (top + cropHeight).toInt().coerceAtMost(bitmap.height),
+        )
+        canvas.drawBitmap(bitmap, src, dst, paint)
+    }
+
+    private fun applyContactSheetTexture(bitmap: Bitmap) {
+        val canvas = Canvas(bitmap)
+        val width = bitmap.width
+        val height = bitmap.height
+        val random = java.util.Random(width * 73856093L xor height * 19349663L)
+        val texture = Paint(Paint.ANTI_ALIAS_FLAG)
+
+        val pixels = IntArray(width * height)
+        bitmap.getPixels(pixels, 0, width, 0, 0, width, height)
+        for (i in pixels.indices) {
+            val p = pixels[i]
+            val noise = random.nextInt(37) - 18
+            val speckle = if (random.nextFloat() < 0.004f) random.nextInt(70) - 45 else 0
+            pixels[i] = Color.rgb(
+                (Color.red(p) + noise + speckle).coerceIn(0, 255),
+                (Color.green(p) + noise + speckle).coerceIn(0, 255),
+                (Color.blue(p) + noise + speckle).coerceIn(0, 255),
+            )
+        }
+        bitmap.setPixels(pixels, 0, width, 0, 0, width, height)
+
+        val weaveSpacing = (width / 410f).coerceAtLeast(2f)
+        texture.strokeWidth = 1f
+        var x = 0f
+        var column = 0
+        while (x < width) {
+            texture.color = if (column % 2 == 0) Color.argb(20, 255, 255, 255) else Color.argb(17, 25, 20, 22)
+            canvas.drawLine(x, 0f, x, height.toFloat(), texture)
+            x += weaveSpacing
+            column++
+        }
+        var y = 0f
+        var row = 0
+        while (y < height) {
+            texture.color = if (row % 2 == 0) Color.argb(14, 255, 255, 255) else Color.argb(14, 16, 13, 15)
+            canvas.drawLine(0f, y, width.toFloat(), y, texture)
+            y += weaveSpacing * 1.28f
+            row++
+        }
+
+        texture.style = Paint.Style.STROKE
+        texture.strokeWidth = (width / 680f).coerceAtLeast(1f)
+        repeat(18) {
+            val x0 = random.nextFloat() * width
+            val y0 = random.nextFloat() * height
+            texture.color = if (it % 3 == 0) Color.argb(58, 10, 8, 7) else Color.argb(42, 255, 250, 235)
+            canvas.drawLine(
+                x0,
+                y0,
+                x0 + (random.nextFloat() - 0.5f) * width * 0.08f,
+                y0 + height * (0.04f + random.nextFloat() * 0.14f),
+                texture,
+            )
+        }
+    }
+
+    private fun sampleCell(
+        pixels: IntArray,
+        width: Int,
+        height: Int,
+        left: Int,
+        top: Int,
+        sampleWidth: Int,
+        sampleHeight: Int,
+    ): CellStats {
+        var lumaSum = 0f
+        var count = 0
+        val right = (left + sampleWidth).coerceAtMost(width)
+        val bottom = (top + sampleHeight).coerceAtMost(height)
+        var y = top
+        while (y < bottom) {
+            var x = left
+            while (x < right) {
+                val p = pixels[y * width + x]
+                lumaSum += Color.red(p) * 0.299f + Color.green(p) * 0.587f + Color.blue(p) * 0.114f
+                count++
+                x += 2
+            }
+            y += 2
+        }
+        return CellStats(if (count == 0) 0f else lumaSum / count)
+    }
+
+    private fun toneCurveForCoolPrint(value: Float): Float {
+        val lifted = value * 0.88f + 0.07f
+        return (lifted * lifted * (3f - 2f * lifted)).coerceIn(0f, 1f)
+    }
+
+    private fun mix(a: Float, b: Float, amount: Float): Float = a + (b - a) * amount
+
+    private data class CellStats(val luma: Float)
 
     private fun applyGrain(bitmap: Bitmap, intensity: Float): Bitmap {
         val pixels = IntArray(bitmap.width * bitmap.height)

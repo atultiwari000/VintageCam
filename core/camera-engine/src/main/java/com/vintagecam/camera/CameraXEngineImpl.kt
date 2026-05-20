@@ -2,12 +2,15 @@ package com.vintagecam.camera
 
 import android.content.Context
 import android.net.Uri
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.view.PreviewView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -28,6 +31,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import java.util.concurrent.TimeUnit
 
 @Singleton
 class CameraXEngineImpl @Inject constructor(
@@ -38,10 +42,12 @@ class CameraXEngineImpl @Inject constructor(
     private var cameraProvider: ProcessCameraProvider? = null
     private var imageCapture: ImageCapture? = null
     private var preview: Preview? = null
+    private var camera: Camera? = null
     private var currentCameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
     private var currentProfile: CameraProfile? = null
     private var boundLifecycleOwner: LifecycleOwner? = null
     private var boundSurfaceProvider: Preview.SurfaceProvider? = null
+    private var flashEnabled: Boolean = false
 
     override fun applyProfile(profile: CameraProfile) {
         currentProfile = profile
@@ -79,6 +85,7 @@ class CameraXEngineImpl @Inject constructor(
             cameraProvider?.unbindAll()
             preview = null
             imageCapture = null
+            camera = null
         } catch (e: Exception) {
             android.util.Log.e("CameraXEngine", "Failed to stop preview", e)
         }
@@ -104,22 +111,16 @@ class CameraXEngineImpl @Inject constructor(
     ): RawCaptureResult {
         android.util.Log.d("CameraXEngine", "captureRawBurst: begin profile=${profile.id} frames=$burstCount")
         val firstFrame = captureBitmapFrame(profile)
-        val accumulator = ComputationalBurstProcessor.begin(firstFrame, profile, burstCount)
-        firstFrame.recycle()
+        val mergeFrames = ArrayList<android.graphics.Bitmap>(burstCount - 1)
 
         repeat(burstCount - 1) { index ->
             val frame = captureBitmapFrame(profile)
-            accumulator.addFrame(frame)
-            frame.recycle()
+            mergeFrames += frame
             if (index < burstCount - 2) delay(18)
         }
 
-        val merged = withContext(Dispatchers.Default) {
-            accumulator.finish()
-        }
-
-        android.util.Log.d("CameraXEngine", "captureRawBurst: merged profile=${profile.id} frames=$burstCount")
-        return RawCaptureResult(merged, capturedAtMillis)
+        android.util.Log.d("CameraXEngine", "captureRawBurst: collected profile=${profile.id} frames=$burstCount")
+        return RawCaptureResult(firstFrame, capturedAtMillis, mergeFrames)
     }
 
     private suspend fun captureBitmapFrame(profile: CameraProfile): android.graphics.Bitmap {
@@ -131,6 +132,7 @@ class CameraXEngineImpl @Inject constructor(
             suspendCancellableCoroutine<ImageProxy> { cont ->
                 try {
                     android.util.Log.d("CameraXEngine", "captureRawPhoto: takePicture requested profile=${profile.id}")
+                    capture.flashMode = if (flashEnabled) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF
                     capture.takePicture(
                         ContextCompat.getMainExecutor(context),
                         object : ImageCapture.OnImageCapturedCallback() {
@@ -170,9 +172,42 @@ class CameraXEngineImpl @Inject constructor(
         captureProcessor.processBitmap(bitmap, profile, capturedAtMillis)
     }
 
+    override suspend fun processPhoto(
+        raw: RawCaptureResult,
+        profile: CameraProfile,
+    ): android.graphics.Bitmap {
+        val source = if (raw.mergeFrames.isEmpty()) {
+            raw.bitmap
+        } else {
+            withContext(Dispatchers.Default) {
+                val accumulator = ComputationalBurstProcessor.begin(
+                    reference = raw.bitmap,
+                    profile = profile,
+                    totalFrames = raw.mergeFrames.size + 1,
+                )
+                raw.mergeFrames.forEach { frame ->
+                    accumulator.addFrame(frame)
+                    if (!frame.isRecycled) frame.recycle()
+                }
+                accumulator.finish()
+            }.also {
+                if (!raw.bitmap.isRecycled) raw.bitmap.recycle()
+            }
+        }
+
+        var processed: android.graphics.Bitmap? = null
+        return try {
+            processPhoto(source, profile, raw.capturedAtMillis).also {
+                processed = it
+            }
+        } finally {
+            if (processed !== source && !source.isRecycled) source.recycle()
+        }
+    }
+
     override suspend fun capturePhoto(profile: CameraProfile): CaptureResult {
         val raw = captureRawPhoto(profile, System.currentTimeMillis())
-        val processed = processPhoto(raw.bitmap, profile, raw.capturedAtMillis)
+        val processed = processPhoto(raw, profile)
 
         // Save to gallery on IO dispatcher
         val gallerySaver = GallerySaver(context)
@@ -206,10 +241,37 @@ class CameraXEngineImpl @Inject constructor(
             try {
                 provider.unbindAll()
                 bindInternal(lifecycleOwner, surfaceProvider)
+                setFlashEnabled(flashEnabled)
             } catch (e: Exception) {
                 android.util.Log.e("CameraXEngine", "Switch failed", e)
             }
         }
+    }
+
+    override fun setFlashEnabled(enabled: Boolean) {
+        flashEnabled = enabled
+        imageCapture?.flashMode = if (enabled) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF
+
+        val boundCamera = camera ?: return
+        if (!boundCamera.cameraInfo.hasFlashUnit()) {
+            android.util.Log.w("CameraXEngine", "Flash requested but this camera has no flash unit")
+            return
+        }
+
+        boundCamera.cameraControl.enableTorch(enabled)
+    }
+
+    override fun focusAt(previewView: PreviewView, x: Float, y: Float) {
+        val boundCamera = camera ?: return
+        val point = previewView.meteringPointFactory.createPoint(x, y)
+        val action = FocusMeteringAction.Builder(
+            point,
+            FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE,
+        )
+            .setAutoCancelDuration(3, TimeUnit.SECONDS)
+            .build()
+
+        boundCamera.cameraControl.startFocusAndMetering(action)
     }
 
     override fun setZoom(scale: Float) {}
@@ -236,13 +298,17 @@ class CameraXEngineImpl @Inject constructor(
         imageCapture = ImageCapture.Builder()
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
             .build()
+            .also {
+                it.flashMode = if (flashEnabled) ImageCapture.FLASH_MODE_ON else ImageCapture.FLASH_MODE_OFF
+            }
 
-        provider.bindToLifecycle(
+        camera = provider.bindToLifecycle(
             lifecycleOwner,
             currentCameraSelector,
             preview,
             imageCapture,
         )
+        setFlashEnabled(flashEnabled)
     }
 
     private suspend fun <T> ListenableFuture<T>.await(): T = suspendCancellableCoroutine { cont ->
